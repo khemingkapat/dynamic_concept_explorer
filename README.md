@@ -1,7 +1,6 @@
 # Dynamic Concept Explorer: Visualizing and Summarizing Wikipedia Topic Networks
 
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/)
-[![Nix DevShell](https://img.shields.io/badge/nix-flake-purple.svg)](https://nixos.org/)
 [![uv](https://img.shields.io/badge/managed%20by-uv-orange.svg)](https://github.com/astral-sh/uv)
 
 An interactive, graph-based knowledge exploration system that ingests arbitrary seed topics from Wikipedia, traverses semantic relationships, prunes topic graphs, and enriches nodes with automated summaries and topic classifications.
@@ -71,46 +70,31 @@ The system is structured as a modular Python package located in [`src/dynamic_co
 
 ---
 
-## 3. Development Environment & Setup
+## 3. Quickstart & Setup
 
-The project uses [Nix](https://nixos.org/) for reproducible system libraries and [uv](https://github.com/astral-sh/uv) for fast, isolated Python package management.
+The project is managed using [`uv`](https://github.com/astral-sh/uv) for fast, reproducible dependency resolution.
 
 ### Prerequisites
-* Nix with flakes enabled (optional, but recommended via `direnv`)
 * Python 3.11+
-* `uv` package manager
+* [`uv`](https://docs.astral.sh/uv/) (recommended) or standard `pip`
 
 ### Installation
 
-1. **Clone and enter the directory:**
+1. **Clone the repository:**
    ```bash
+   git clone git@github.com:khemingkapat/dynamic_concept_explorer.git
    cd dynamic_concept_explorer
    ```
 
-2. **Allow direnv (if using Nix):**
-   ```bash
-   direnv allow
-   ```
-
-3. **Install dependencies and sync environment:**
+2. **Install dependencies and sync environment:**
    ```bash
    uv sync
    ```
 
-4. **Verify baseline modules:**
+3. **Verify baseline modules:**
    ```bash
    uv run python verify_baseline.py
    ```
-
-### Interactive Dev Environment (Zellij)
-If you use [Zellij](https://zellij.dev/), launch the workspace layout defined in [`dev.kdl`](dev.kdl):
-```bash
-zellij --layout dev.kdl
-```
-This spawns:
-* Tab 1: Neovim editor
-* Tab 2: Agent CLI terminal
-* Tab 3: Terminal with floating JupyterLab server (`uv run jupyter lab`)
 
 ---
 
