@@ -61,14 +61,14 @@ $$
 \end{cases}
 $$
 
-  4. Constructs a weighted undirected `networkx.Graph` and computes sentence PageRank scores $\operatorname{PR}(s_i)$ matching `nx.pagerank`:
+  4. Constructs a weighted undirected `networkx.Graph` and computes sentence PageRank scores $\mathrm{PR}(s_i)$ matching `nx.pagerank`:
 
 $$
-\operatorname{PR}(s_i) = \frac{1-d}{N} + d \sum_{s_j \in \mathcal{N}(s_i)} \frac{\mathbf{S}_{ji}}{\sum_{s_k \in \mathcal{N}(s_j)} \mathbf{S}_{jk}} \operatorname{PR}(s_j)
+\mathrm{PR}(s_i) = \frac{1-d}{N} + d \sum_{s_j \in \mathcal{N}(s_i)} \frac{\mathbf{S}_{ji}}{\sum_{s_k \in \mathcal{N}(s_j)} \mathbf{S}_{jk}} \mathrm{PR}(s_j)
 $$
 
      where $N$ is the number of sentences, $d = 0.85$ is the damping factor, and $\mathcal{N}(s_i)$ denotes sentence $s_i$'s adjacent neighbors.
-  5. Selects top-$k$ sentences based on target compression ratio $k = \max(1, \min(N, \operatorname{round}(N \cdot r)))$ (default $r = 0.28$) and restores original chronological sentence order.
+  5. Selects top-$k$ sentences based on target compression ratio $k = \max(1, \min(N, \mathrm{round}(N \cdot r)))$ (default $r = 0.28$) and restores original chronological sentence order.
 * **LexRank:** Estimates IDF across a background sentence corpus and extracts salient central sentences with cosine thresholding.
 * **Neural Seq2Seq (BART):** Employs `facebook/bart-large-cnn` for neural abstractive summarization with input token length validation (1024 token boundary detection).
 
@@ -85,7 +85,7 @@ $$
 
 ### 2.4 Graph Construction & Visualization (`visualization.py`)
 * **Section Keywords WordClouds:** Computes word clouds per topic section using exact visual configurations (`width=800, height=400, collocations=False`).
-* **Co-occurrence & Link Networks:** Generates NetworkX graph topologies with degree-weighted node sizing ($\operatorname{size}(v) = 20 \cdot \operatorname{deg}(v)$) and spring layout positioning.
+* **Co-occurrence & Link Networks:** Generates NetworkX graph topologies with degree-weighted node sizing ($\mathrm{size}(v) = 20 \cdot \mathrm{deg}(v)$) and spring layout positioning.
 
 ---
 
