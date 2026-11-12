@@ -61,13 +61,12 @@ $$
 \end{cases}
 $$
 
-  4. Constructs a weighted undirected `networkx.Graph` and computes sentence PageRank scores $\mathrm{PR}(s_i)$ matching `nx.pagerank`:
+  4. Constructs a weighted undirected `networkx.Graph` and computes sentence PageRank scores $\mathrm{PR}(s_i)$ matching `nx.pagerank` (with damping factor $d = 0.85$, sentence count $N$, and adjacent neighbor set $\mathcal{N}(s_i)$):
 
 $$
 \mathrm{PR}(s_i) = \frac{1-d}{N} + d \sum_{s_j \in \mathcal{N}(s_i)} \frac{\mathbf{S}_{ji}}{\sum_{s_k \in \mathcal{N}(s_j)} \mathbf{S}_{jk}} \mathrm{PR}(s_j)
 $$
 
-     where $N$ is the number of sentences, $d = 0.85$ is the damping factor, and $\mathcal{N}(s_i)$ denotes sentence $s_i$'s adjacent neighbors.
   5. Selects top-$k$ sentences based on target compression ratio $k = \max(1, \min(N, \mathrm{round}(N \cdot r)))$ (default $r = 0.28$) and restores original chronological sentence order.
 * **LexRank:** Estimates IDF across a background sentence corpus and extracts salient central sentences with cosine thresholding.
 * **Neural Seq2Seq (BART):** Employs `facebook/bart-large-cnn` for neural abstractive summarization with input token length validation (1024 token boundary detection).
@@ -75,13 +74,11 @@ $$
 ### 2.3 Topic Modeling & Categorization (`topic_modeling.py`)
 * **Text Preprocessing:** Tokenization via `gensim.utils.simple_preprocess` (de-accenting, punctuation removal, length $\ge 3$), followed by two-pass WordNet lemmatization (verb + noun passes) and stopword removal.
 * **Statistical Vocabulary Pruning:** Builds a `gensim.corpora.Dictionary` and filters extreme terms (`no_below=5`, `no_above=0.5`).
-* **Unsupervised Topic Discovery:** Fits an unsupervised Latent Dirichlet Allocation (LDA) model to assign thematic distribution vectors across retrieved concept documents:
+* **Unsupervised Topic Discovery:** Fits an unsupervised Latent Dirichlet Allocation (LDA) model to assign thematic distribution vectors across retrieved concept documents (where $\theta_{d, k}$ denotes the probability of topic $k$ in document $d$, and $\phi_{k, w}$ denotes the probability of word $w$ under topic $k$):
 
 $$
 P(w \mid d) = \sum_{k=1}^K P(w \mid z = k) \cdot P(z = k \mid d) = \sum_{k=1}^K \phi_{k, w} \cdot \theta_{d, k}
 $$
-
-  where $\theta_{d, k}$ is the probability of topic $k$ in document $d$, and $\phi_{k, w}$ is the probability of word $w$ under topic $k$.
 
 ### 2.4 Graph Construction & Visualization (`visualization.py`)
 * **Section Keywords WordClouds:** Computes word clouds per topic section using exact visual configurations (`width=800, height=400, collocations=False`).
