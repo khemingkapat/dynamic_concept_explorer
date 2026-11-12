@@ -50,21 +50,25 @@ The system is structured as a modular Python package located in [`src/dynamic_co
 ### 2.2 Text Distillation & Summarization (`summarizer.py`)
 * **Extractive TextRank:**
   1. Tokenizes input text into sentences using NLTK `sent_tokenize`.
-  2. Builds sentence representations $\mathbf{v}_i \in \mathbb{R}^{|V|}$ using `TfidfVectorizer(stop_words='english')`.
-  3. Computes the sentence-to-sentence cosine similarity matrix $\mathbf{S}$:
+  2. Builds sentence TF-IDF feature representations $\mathbf{v}_i \in \mathbb{R}^{|V|}$ using `TfidfVectorizer(stop_words='english')`.
+  3. Computes the sentence-to-sentence cosine similarity matrix $\mathbf{S}$ with diagonal zeroed ($\mathbf{S}_{ii} = 0$):
 
-     $$
-     \mathbf{S}_{ij} = \frac{\mathbf{v}_i \cdot \mathbf{v}_j}{\|\mathbf{v}_i\|_2 \|\mathbf{v}_j\|_2}, \quad \text{with } \mathbf{S}_{ii} = 0
-     $$
+$$
+\mathbf{S}_{ij} = 
+\begin{cases} 
+\dfrac{\mathbf{v}_i \cdot \mathbf{v}_j}{\|\mathbf{v}_i\|_2 \|\mathbf{v}_j\|_2} & \text{if } i \neq j \\
+0 & \text{if } i = j 
+\end{cases}
+$$
 
   4. Constructs a weighted undirected `networkx.Graph` and computes sentence PageRank scores $\operatorname{PR}(s_i)$ matching `nx.pagerank`:
 
-     $$
-     \operatorname{PR}(s_i) = \frac{1-d}{N} + d \sum_{s_j \in \mathcal{N}(s_i)} \frac{\mathbf{S}_{ji}}{\sum_{s_k \in \mathcal{N}(s_j)} \mathbf{S}_{jk}} \operatorname{PR}(s_j)
-     $$
+$$
+\operatorname{PR}(s_i) = \frac{1-d}{N} + d \sum_{s_j \in \mathcal{N}(s_i)} \frac{\mathbf{S}_{ji}}{\sum_{s_k \in \mathcal{N}(s_j)} \mathbf{S}_{jk}} \operatorname{PR}(s_j)
+$$
 
      where $N$ is the number of sentences, $d = 0.85$ is the damping factor, and $\mathcal{N}(s_i)$ denotes sentence $s_i$'s adjacent neighbors.
-  5. Selects top-$k$ sentences based on a target compression ratio $k = \max(1, \min(N, \text{round}(N \cdot r)))$ (default $r = 0.28$) and restores original chronological sentence order.
+  5. Selects top-$k$ sentences based on target compression ratio $k = \max(1, \min(N, \operatorname{round}(N \cdot r)))$ (default $r = 0.28$) and restores original chronological sentence order.
 * **LexRank:** Estimates IDF across a background sentence corpus and extracts salient central sentences with cosine thresholding.
 * **Neural Seq2Seq (BART):** Employs `facebook/bart-large-cnn` for neural abstractive summarization with input token length validation (1024 token boundary detection).
 
@@ -73,15 +77,15 @@ The system is structured as a modular Python package located in [`src/dynamic_co
 * **Statistical Vocabulary Pruning:** Builds a `gensim.corpora.Dictionary` and filters extreme terms (`no_below=5`, `no_above=0.5`).
 * **Unsupervised Topic Discovery:** Fits an unsupervised Latent Dirichlet Allocation (LDA) model to assign thematic distribution vectors across retrieved concept documents:
 
-  $$
-  P(w \mid d) = \sum_{k=1}^K P(w \mid z = k) \cdot P(z = k \mid d) = \sum_{k=1}^K \phi_{k, w} \cdot \theta_{d, k}
-  $$
+$$
+P(w \mid d) = \sum_{k=1}^K P(w \mid z = k) \cdot P(z = k \mid d) = \sum_{k=1}^K \phi_{k, w} \cdot \theta_{d, k}
+$$
 
   where $\theta_{d, k}$ is the probability of topic $k$ in document $d$, and $\phi_{k, w}$ is the probability of word $w$ under topic $k$.
 
 ### 2.4 Graph Construction & Visualization (`visualization.py`)
 * **Section Keywords WordClouds:** Computes word clouds per topic section using exact visual configurations (`width=800, height=400, collocations=False`).
-* **Co-occurrence & Link Networks:** Generates NetworkX graph topologies with degree-weighted node sizing ($20 \cdot \operatorname{deg}(v)$) and spring layout positioning.
+* **Co-occurrence & Link Networks:** Generates NetworkX graph topologies with degree-weighted node sizing ($\operatorname{size}(v) = 20 \cdot \operatorname{deg}(v)$) and spring layout positioning.
 
 ---
 
