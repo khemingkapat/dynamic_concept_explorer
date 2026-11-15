@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import math
@@ -33,6 +34,13 @@ DEFAULT_SKIP_SECTIONS = frozenset(
     }
 )
 EXCLUDED_HREFS = frozenset({"/wiki/Main_Page"})
+
+# Inline noise left in prose after tag stripping: [1], [a], [citation needed], [note 2], ...
+INLINE_MARKER_PATTERN = re.compile(
+    r"\[(?:\d+|[a-z]|note \d+|citation needed|clarification needed|better source needed)\]",
+    re.IGNORECASE,
+)
+WHITESPACE_PATTERN = re.compile(r"\s+")
 
 _MEMORY_CACHE: dict[str, tuple[float, str]] = {}
 
@@ -67,6 +75,19 @@ class NeighborhoodResult:
     candidates: list[RankedLink]
     pruned: list[RankedLink]
     edges: dict[str, set[str]]
+
+
+@dataclass(frozen=True)
+class ArticleText:
+    """Clean prose of an article, split into the lead (abstract) and the remaining body."""
+
+    lead: str
+    body: str
+
+    @property
+    def full(self) -> str:
+        """Lead and body joined into a single document."""
+        return "\n\n".join(part for part in (self.lead, self.body) if part)
 
 
 LinkScorer = Callable[[LinkStats], float]
@@ -240,6 +261,50 @@ def extract_section_links(body: Tag) -> dict[str, list[dict[str, str]]]:
                 links.append({"text": text, "href": canonical})
         section_links[key] = links
     return section_links
+
+
+def _clean_paragraph_text(paragraph: Tag) -> str:
+    """Return paragraph prose without citation markers, math markup, or edit links."""
+    clone = copy.copy(paragraph)
+    for noise in clone.find_all(["style", "script", "math"]):
+        noise.decompose()
+    for noise in clone.select("sup.reference, sup.noprint, .mw-editsection, .mwe-math-element"):
+        noise.decompose()
+
+    text = INLINE_MARKER_PATTERN.sub("", clone.get_text())
+    return WHITESPACE_PATTERN.sub(" ", text).strip()
+
+
+def extract_article_text(
+    body: Tag,
+    *,
+    skip_sections: frozenset[str] = DEFAULT_SKIP_SECTIONS,
+) -> ArticleText:
+    """Extract clean lead and body prose from bodyContent, skipping boilerplate sections.
+
+    Paragraphs before the first ``<h2>`` form the lead; later paragraphs form the body.
+    Works on both ``<section>``-wrapped and flat Wikipedia markup because it only relies
+    on the document order of ``<h2>`` and ``<p>`` elements.
+    """
+    lead: list[str] = []
+    rest: list[str] = []
+    in_lead = True
+    skipping = False
+
+    for element in body.find_all(["h2", "p"]):
+        if element.name == "h2":
+            in_lead = False
+            title = re.sub(r"\s*\[edit\]$", "", element.get_text(" ", strip=True), flags=re.I)
+            skipping = title.strip().lower() in skip_sections
+            continue
+        if skipping or element.find_parent("table") is not None:
+            continue
+
+        text = _clean_paragraph_text(element)
+        if text:
+            (lead if in_lead else rest).append(text)
+
+    return ArticleText(lead="\n\n".join(lead), body="\n\n".join(rest))
 
 
 def extract_link_stats(
