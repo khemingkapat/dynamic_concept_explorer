@@ -112,8 +112,21 @@ The project is managed using [`uv`](https://github.com/astral-sh/uv) for fast, r
    uv run python verify_baseline.py
    ```
 
----
+### Launch the interactive explorer
 
+```bash
+uv run streamlit run src/dynamic_concept_explorer/app.py
+```
+Or double-click `run_app.bat` on Windows.
+
+The dashboard integrates all pipeline modules across 5 specialized views:
+1. **🌐 Concept Network & Topology**: Interactive Graphviz network with PageRank node sizing, LDA topic color coding, and 2-pass in-degree candidate pruning breakdown.
+2. **📖 Concept Inspector & Sections**: Deep-dive into any concept with instant re-summarization, Wikipedia lead abstracts, full prose reader, and section keywords.
+3. **☁️ Visualizations**: Section WordClouds and NetworkX pairwise word co-occurrence networks from `visualization.py`.
+4. **⚖️ Summarizer Benchmark Lab**: Side-by-side performance comparison of TextRank (Lead/Full), LexRank (Full), and BART with real-time latency and ROUGE-1/2/L scores against human abstracts (`compare_node_summaries.py`).
+5. **📊 Quantitative Evaluation**: Macro and per-topic Gensim $C_v$ topic coherence, graph density/reciprocity/clustering topology metrics, and corpus-wide macro ROUGE scores (`evaluation.py`).
+
+---
 ## 4. Implementation Roadmap
 
 | Phase | Milestone | Focus Areas |

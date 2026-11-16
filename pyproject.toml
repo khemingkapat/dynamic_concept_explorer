@@ -19,6 +19,7 @@ dependencies = [
     "requests>=2.31.0",
     "rouge-score>=0.1.2",
     "scikit-learn>=1.4.0",
+    "streamlit>=1.40.0",
     "torch>=2.0.0",
     "transformers>=4.40.0",
     "wordcloud>=1.9.0",
@@ -44,6 +45,7 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

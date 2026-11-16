@@ -4,20 +4,25 @@ Baseline visualization module extracted directly from:
 - text_vis/supplement_vis.ipynb (NetworkX graph co-occurrence diagram)
 """
 
+import contextlib
 from itertools import combinations
+
 import matplotlib.pyplot as plt
 import networkx as nx
 import nltk
 from wordcloud import WordCloud
 
-try:
+with contextlib.suppress(Exception):
     nltk.download('punkt', quiet=True)
-except Exception:
-    pass
 from nltk.tokenize import word_tokenize
 
 
-def generate_section_wordcloud(keywords: list[str], section_title: str = "", show: bool = True):
+def generate_section_wordcloud(
+    keywords: list[str],
+    section_title: str = "",
+    background_color: str = "white",
+    show: bool = True,
+):
     """
     Exact WordCloud generation matching Cell 8 from Lab3_wiki_activity.ipynb:
     width=800, height=400, background_color="white", collocations=False.
@@ -32,7 +37,7 @@ def generate_section_wordcloud(keywords: list[str], section_title: str = "", sho
     wordcloud = WordCloud(
         width=800,
         height=400,
-        background_color="white",
+        background_color=background_color,
         collocations=False,  # Set to False to prevent repeating word pairs
     ).generate(text_data)
 
