@@ -21,10 +21,10 @@ jobs:
         run: uv sync --locked
 
       - name: Run Ruff lint
-        run: uv run ruff check src/dynamic_concept_explorer/scraper.py tests/
+        run: uv run ruff check src/dynamic_concept_explorer/scraper.py src/dynamic_concept_explorer/summarizer.py tests/ scripts/
 
       - name: Run Ruff format check
-        run: uv run ruff format --check src/dynamic_concept_explorer/scraper.py tests/
+        run: uv run ruff format --check src/dynamic_concept_explorer/scraper.py src/dynamic_concept_explorer/summarizer.py tests/ scripts/
 
       - name: Run unit tests
         run: uv run pytest -v

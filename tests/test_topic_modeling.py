@@ -212,6 +212,6 @@ def test_fetch_neighborhood_documents_extracts_candidates_and_canonical_seed() -
 
     docs = scraper.fetch_neighborhood_documents(neighborhood, fetcher=mock_fetcher)
     assert set(docs.keys()) == {"/wiki/Seed_Topic", "/wiki/Active_Candidate"}
-    assert "Boilerplate citation text" not in docs["/wiki/Seed_Topic"]
-    assert "machine learning" in docs["/wiki/Seed_Topic"]
+    assert "Boilerplate citation text" not in docs["/wiki/Seed_Topic"].full
+    assert "machine learning" in docs["/wiki/Seed_Topic"].full
     assert "https://en.wikipedia.org/wiki/Pruned_Node" not in fetched_urls
