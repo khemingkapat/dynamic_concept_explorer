@@ -27,3 +27,28 @@
 - Bound `_MEMORY_CACHE` with LRU eviction and key by `(cache_dir, url)`.
 - Replace `":" in canonical` with explicit Wikipedia namespace prefix matching so titles with colons are preserved.
 - Add optional polite rate-limiting/backoff for uncached Pass-2 requests.
+
+---
+
+## 2026-11-16 — Issue #3: Unsupervised LDA Clustering for Topic Nodes
+
+- **Branch:** `feat/lda-topic-clustering`
+- **Issue:** [#3](https://github.com/khemingkapat/dynamic_concept_explorer/issues/3) — `feat(modeling): cluster discovered topic nodes using unsupervised LDA`
+
+### What Was Built
+- **Scraper Document Extraction (`src/dynamic_concept_explorer/scraper.py`):**
+  - **`extract_article_text`:** Extracts clean `<p>` prose from `div#bodyContent` while skipping boilerplate sections (`see also`, `references`, `external links`, `notes`, `further reading`, `bibliography`, `sources`).
+  - **`fetch_neighborhood_documents`:** Fetches cached HTML for `seed_url` + active `candidates` (ignoring `pruned` nodes) and returns `dict[canonical_href, str]` keyed identically to `NeighborhoodResult.edges`.
+  - **`_resolve_fetcher`:** Shared helper for cached page fetching across `discover_neighborhood` and `fetch_neighborhood_documents`.
+- **Unsupervised LDA Clustering (`src/dynamic_concept_explorer/topic_modeling.py`):**
+  - **Structured Outputs:** Added frozen dataclasses `TopicDescriptor`, `NodeTopicAssignment`, and `TopicClusteringResult` (exposing `topics`, `assignments`, `model`, `dictionary`, `corpus`, and `tokenized_docs` for Issue #4 UI and Issue #5 $C_v$ coherence).
+  - **Tunable Hyperparameters:** Extended `preprocess_text(..., extra_stopwords=None)` and `train_lda(..., alpha="symmetric", eta=None)`, and added `cluster_topic_nodes` exposing `num_topics` (default `4`), `no_below` (default `2`), `no_above` (default `0.85`), `alpha`, `eta`, and `extra_stopwords` while keeping `passes=10` fixed internally.
+  - **Edge-Case Guards:** Fallback to `no_below=1, no_above=1.0` if `filter_extremes` empties the dictionary, `ValueError` on empty/stopword-only corpora, and uniform-distribution fallback (`confidence=0.0`) for empty per-node BoWs.
+- **Tests (`tests/test_topic_modeling.py`):**
+  - Added 5 offline unit tests covering `preprocess_text` + `extra_stopwords`, `build_corpus_and_dictionary` filtering, multi-domain LDA clustering, edge-case guards, and `fetch_neighborhood_documents` integration.
+
+### Verification
+- `uv run ruff check` & `uv run ruff format --check` on touched files: passed (`All checks passed!`, `4 files already formatted`).
+- `uv run pytest -v`: 11/11 passed.
+- `uv run python verify_baseline.py`: passed.
+- Live cached check (`Machine_learning`, 21 documents, `num_topics=4`, `extra_stopwords={'machine', 'learning'}`): produced 4 distinct topics (e.g., `/wiki/Deep_learning` → `network, train, neural` at `1.00`; `/wiki/Bayesian_network` → `variable, rule, game` at `1.00`).
