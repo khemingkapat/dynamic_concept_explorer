@@ -333,6 +333,95 @@ def _extract_seed_href(seed_url: str) -> str | None:
     return _canonical_wiki_href(seed_url[idx:])
 
 
+def _resolve_fetcher(
+    fetcher: PageFetcher | None,
+    *,
+    use_cache: bool,
+    cache_dir: Path,
+    ttl_seconds: float | None,
+) -> PageFetcher:
+    if fetcher is not None:
+        return fetcher
+    return lambda url: fetch_wikipedia_page(
+        url,
+        use_cache=use_cache,
+        cache_dir=cache_dir,
+        ttl_seconds=ttl_seconds,
+    )
+
+
+def extract_article_text(
+    body: Tag,
+    *,
+    skip_sections: frozenset[str] = DEFAULT_SKIP_SECTIONS,
+) -> str:
+    """Extract clean article prose from `div#bodyContent`, skipping boilerplate sections."""
+    paragraphs: list[str] = []
+    sections = _top_level_sections(body)
+    containers: list[Tag] = sections if sections else [body]
+
+    for container in containers:
+        if sections and _normalize_section_title(container).lower() in skip_sections:
+            continue
+        for p_tag in container.find_all("p"):
+            # Skip paragraphs inside nested boilerplate subsections
+            parent_section = p_tag.find_parent("section")
+            if (
+                parent_section is not None
+                and parent_section is not container
+                and _normalize_section_title(parent_section).lower() in skip_sections
+            ):
+                continue
+            text = p_tag.get_text(" ", strip=True)
+            if text:
+                paragraphs.append(text)
+
+    return " ".join(paragraphs)
+
+
+def fetch_neighborhood_documents(
+    neighborhood: NeighborhoodResult,
+    *,
+    base_url: str = WIKIPEDIA_BASE_URL,
+    fetcher: PageFetcher | None = None,
+    use_cache: bool = True,
+    cache_dir: Path = DEFAULT_CACHE_DIR,
+    ttl_seconds: float | None = DEFAULT_CACHE_TTL_SECONDS,
+    skip_sections: frozenset[str] = DEFAULT_SKIP_SECTIONS,
+) -> dict[str, str]:
+    """Fetch and extract clean prose for the seed and active candidate nodes."""
+    active_fetcher = _resolve_fetcher(
+        fetcher,
+        use_cache=use_cache,
+        cache_dir=cache_dir,
+        ttl_seconds=ttl_seconds,
+    )
+    documents: dict[str, str] = {}
+
+    seed_href = _extract_seed_href(neighborhood.seed_url)
+    targets: list[tuple[str, str]] = [
+        (seed_href or neighborhood.seed_url, _resolve_seed_url(neighborhood.seed_url, base_url))
+    ]
+    for candidate in neighborhood.candidates:
+        targets.append((candidate.href, urljoin(base_url, candidate.href)))
+
+    for node_id, url in targets:
+        if node_id in documents:
+            continue
+        try:
+            soup = active_fetcher(url)
+        except requests.RequestException:
+            continue
+        body = get_body_content(soup)
+        if body is None:
+            continue
+        text = extract_article_text(body, skip_sections=skip_sections)
+        if text:
+            documents[node_id] = text
+
+    return documents
+
+
 def discover_neighborhood(
     seed_url: str,
     *,
@@ -349,13 +438,11 @@ def discover_neighborhood(
 ) -> NeighborhoodResult:
     """Run 2-pass candidate ranking and neighborhood in-degree pruning from a seed page."""
     resolved_seed = _resolve_seed_url(seed_url, base_url)
-    active_fetcher = fetcher or (
-        lambda url: fetch_wikipedia_page(
-            url,
-            use_cache=use_cache,
-            cache_dir=cache_dir,
-            ttl_seconds=ttl_seconds,
-        )
+    active_fetcher = _resolve_fetcher(
+        fetcher,
+        use_cache=use_cache,
+        cache_dir=cache_dir,
+        ttl_seconds=ttl_seconds,
     )
 
     seed_soup = active_fetcher(resolved_seed)
