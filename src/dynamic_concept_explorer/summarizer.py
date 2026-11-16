@@ -42,6 +42,7 @@ MAX_TEXTRANK_SENTENCES = 250
 
 SUMMARY_METHODS = ("textrank", "lexrank", "bart")
 SUMMARY_SCOPES = ("lead", "full")
+SENTENCE_ENDINGS = (".", "!", "?", '."', '!"', '?"', ".)", ".'")
 
 Abstractive = Callable[[str], str]
 
@@ -278,6 +279,18 @@ def bart_node_summary(text: str, *, max_new_tokens: int = 80, min_new_tokens: in
     return summary
 
 
+def _complete_sentences(generated: str, n_sentences: int) -> list[str]:
+    """First ``n_sentences`` of generated text, without a sentence cut off by the token limit.
+
+    Generation stops at ``max_new_tokens``, so the last sentence can end mid-phrase. It is
+    dropped unless it is the only sentence, where a partial overview beats an empty one.
+    """
+    sentences = split_sentences(generated)
+    if len(sentences) > 1 and not sentences[-1].endswith(SENTENCE_ENDINGS):
+        sentences = sentences[:-1]
+    return sentences[: max(0, n_sentences)]
+
+
 def summarize_node(
     lead: str,
     body: str = "",
@@ -295,8 +308,9 @@ def summarize_node(
     * ``"textrank"`` (default): extractive TextRank.
     * ``"lexrank"``: extractive LexRank; ``background`` documents improve its IDF estimate.
     * ``"bart"``: abstractive BART, loaded on demand. ``abstractive`` overrides the default
-      model. If the model cannot be loaded or fails, the result falls back to TextRank and
-      ``NodeSummary.method`` records that.
+      model. Output is trimmed to ``n_sentences`` complete sentences. If the model cannot be
+      loaded or fails, the result falls back to TextRank and ``NodeSummary.method`` records
+      that.
 
     ``scope`` selects the text the method ranks:
 
@@ -320,7 +334,8 @@ def summarize_node(
     if method == "bart" and source.strip():
         # BART reads at most 1024 tokens, so the lead goes first when the scope is the article.
         try:
-            sentences = split_sentences((abstractive or bart_node_summary)(source).strip())
+            generated = (abstractive or bart_node_summary)(source).strip()
+            sentences = _complete_sentences(generated, n_sentences)
         except Exception:  # missing weights, no network, OOM: degrade, do not crash the UI
             sentences = []
         if not sentences:

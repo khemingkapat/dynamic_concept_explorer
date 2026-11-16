@@ -209,6 +209,27 @@ def test_summarize_node_bart_on_demand_and_fallback() -> None:
     assert degraded.sentences == summarizer.summarize_node(lead, body).sentences
 
 
+def test_summarize_node_bart_keeps_only_complete_sentences_up_to_limit() -> None:
+    lead, body = ACADEMIC_TOPICS["photosynthesis"]
+    cut_off = "Plants convert light into sugar. Oxygen is released. It maintains the Earth's"
+    too_long = "First point here. Second point here. Third point here. Fourth point here."
+
+    trimmed = summarizer.summarize_node(lead, body, method="bart", abstractive=lambda _: cut_off)
+    capped = summarizer.summarize_node(lead, body, method="bart", abstractive=lambda _: too_long)
+    one = summarizer.summarize_node(
+        lead, body, method="bart", n_sentences=1, abstractive=lambda _: cut_off
+    )
+    only_partial = summarizer.summarize_node(
+        lead, body, method="bart", abstractive=lambda _: "Photosynthesis is the process by"
+    )
+
+    assert trimmed.text == "Plants convert light into sugar. Oxygen is released."
+    assert capped.text == "First point here. Second point here."
+    assert one.text == "Plants convert light into sugar."
+    # A lone cut-off sentence is kept: a partial overview beats an empty node.
+    assert (only_partial.method, only_partial.text) == ("bart", "Photosynthesis is the process by")
+
+
 def test_summarize_node_rejects_unknown_method_and_scope() -> None:
     with pytest.raises(ValueError, match="Unknown summarization method"):
         summarizer.summarize_node("Some lead text.", method="lead")

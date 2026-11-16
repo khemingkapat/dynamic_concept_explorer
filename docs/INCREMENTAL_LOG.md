@@ -93,11 +93,11 @@
   - **`scope`:** `lead` (default) ranks the lead section, following the roadmap's "TextRank lead-section scoring"; it switches to the full article when the lead has fewer than `n_sentences` usable sentences. `full` ranks lead + body.
   - **TextRank (`rank_sentences`, `textrank_sentences`):** README steps 1–5 unchanged in method (`sent_tokenize`, TF-IDF, zero-diagonal cosine matrix, `networkx` graph, `nx.pagerank`, top-k in original order). Graph construction uses the sparse product `X @ X.T` on L2-normalised TF-IDF rows instead of dense pairwise cosine. For nodes, `k` is fixed at 2 sentences instead of the ratio `r = 0.28`.
   - **LexRank (`lexrank_sentences`):** `lexrank` library with cosine threshold 0.25.
-  - **BART (`bart_node_summary`):** `facebook/bart-large-cnn`, loaded once per process and only when requested. If it cannot load or fails, the result falls back to TextRank and is labelled `"textrank (bart unavailable)"`.
+  - **BART (`bart_node_summary`):** `facebook/bart-large-cnn`, loaded once per process and only when requested. Output is trimmed to `n_sentences` complete sentences: a last sentence cut off by the token limit is dropped. If it cannot load or fails, the result falls back to TextRank and is labelled `"textrank (bart unavailable)"`.
   - **Pre-filter for all extractive methods:** sentences outside 6–60 words are dropped and input is capped at 250 sentences. This is an addition not described in the README.
   - Coursework baselines (`textrank`, `lexrank_summary`, `bart_summary`) keep their behaviour; unused imports removed and file formatted with `ruff`.
 - **Comparison Script (`scripts/compare_node_summaries.py`):** Prints the overview, latency, and ROUGE-1/2 F1 against the article lead for TextRank-lead, TextRank-full, LexRank-full, and (with `--bart`) BART.
-- **Tests (`tests/test_summarizer.py`):** 20 offline tests — text extraction on both markup styles, agreement with the coursework TextRank's top sentence, default TextRank-over-lead and full-scope TextRank/LexRank across four academic topics (ML, photosynthesis, French Revolution, general relativity), LexRank with a background corpus, thin-lead switch to the full article, fragment filtering, BART on demand with an injected model, BART failure fallback, and rejection of unknown methods/scopes.
+- **Tests (`tests/test_summarizer.py`):** 21 offline tests — text extraction on both markup styles, agreement with the coursework TextRank's top sentence, default TextRank-over-lead and full-scope TextRank/LexRank across four academic topics (ML, photosynthesis, French Revolution, general relativity), LexRank with a background corpus, thin-lead switch to the full article, fragment filtering, BART on demand with an injected model, BART output trimming, BART failure fallback, and rejection of unknown methods/scopes.
 - **CI (`.github/workflows/ci.yml`):** Ruff now also covers `summarizer.py` and `scripts/`.
 
 ### Lead-Section vs Full-Article (live, 2026-11-16)
@@ -118,14 +118,29 @@ ROUGE is F1 against the article lead, reported only for full-article methods (Te
 - **LexRank over the full article** never picked a lead sentence (ROUGE-2 ≤ 0.025) and was the slowest extractive option (about 280–310 ms on long articles).
 - Timings are single runs on one laptop.
 
+### BART on the Lead Section (real `facebook/bart-large-cnn`, CPU, 2026-11-16)
+
+| Topic | BART ms | Opens with the definition |
+| :--- | ---: | :--- |
+| Machine_learning | 12806 | yes |
+| Photosynthesis | 14134 | yes |
+| French_Revolution | 6061 | no |
+| General_relativity | 9428 | no |
+| Game_theory | 4998 | yes |
+| Natural_language_processing | 3404 | yes |
+
+- **Latency:** 3.4–14.1 s per node on CPU, against 3–19 ms for TextRank on the lead. The first row includes loading the cached model from disk; the very first run also downloaded 1.6 GB (80 s). A 20-node graph would take minutes, so BART stays on demand and is not the default.
+- **Quality:** fluent and shorter than the extractive output, but in two of six topics (French_Revolution, General_relativity) the summary skipped the defining sentence and opened with a secondary point.
+- **Fixed after the first real run:** BART returned three sentences in four of six topics and cut the Photosynthesis summary mid-sentence ("…the oxygen content of the Earth's") at `max_new_tokens=80`. Output is now trimmed to two complete sentences; the rerun above returned exactly two complete sentences for all six topics.
+
 ### Verification
 - `uv run ruff check` & `uv run ruff format --check` on `scraper.py`, `summarizer.py`, `tests/`, `scripts/`: passed.
-- `uv run pytest`: 26/26 passed (6 scraper + 20 summarizer).
+- `uv run pytest`: 27/27 passed (6 scraper + 21 summarizer).
 - `uv run python verify_baseline.py`: passed.
-- Not run: the real `facebook/bart-large-cnn` model (about 1.6 GB download); the BART path is covered only with an injected stand-in.
+- `uv run python scripts/compare_node_summaries.py --bart`: ran end to end with the real model on all six topics. Unit tests still use an injected stand-in so CI does not download the model.
 
 ### Follow-Up / Backlog
-- Run `scripts/compare_node_summaries.py --bart` once to record real BART output and latency.
+- Merge `main` into this branch (PR #8, LDA topic clustering, was merged after the branch was cut).
 - Wire `extract_article_text` + `summarize_node` into the node payload for the UI (issue #4).
 - Reuse `rouge_n_f1` from the comparison script, or a ROUGE library, for the formal evaluation (issue #5).
 - Formula-heavy articles lose inline math in body sentences; consider keeping `alttext` if full-article output is ever shown.
