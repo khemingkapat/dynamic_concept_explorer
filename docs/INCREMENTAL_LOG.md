@@ -52,3 +52,26 @@
 - `uv run pytest -v`: 11/11 passed.
 - `uv run python verify_baseline.py`: passed.
 - Live cached check (`Machine_learning`, 21 documents, `num_topics=4`, `extra_stopwords={'machine', 'learning'}`): produced 4 distinct topics (e.g., `/wiki/Deep_learning` → `network, train, neural` at `1.00`; `/wiki/Bayesian_network` → `variable, rule, game` at `1.00`).
+
+
+---
+
+## 2026-11-16 — Issue #5: Quantitative Text Analytics & Graph Topology Evaluation
+
+- **Branch:** `feat/evaluation-metrics`
+- **Issue:** [#5](https://github.com/khemingkapat/dynamic_concept_explorer/issues/5) — `eval: compute quantitative metrics for text analytics evaluation`
+
+### What Was Built
+- **Dependencies (`pyproject.toml`, `uv.lock`):**
+  - Added `rouge-score>=0.1.2` for ROUGE-1, ROUGE-2, and ROUGE-L evaluation.
+- **Evaluation Module (`src/dynamic_concept_explorer/evaluation.py`):**
+  - **Graph Topology (`compute_graph_topology` -> `GraphTopologyMetrics`):** Computes `node_count`, `edge_count`, `density`, `in_degree_centrality`, `out_degree_centrality`, `betweenness_centrality`, `pagerank`, undirected-view `clustering_coefficients` / `average_clustering`, and `reciprocity`, with safe defaults for empty, 1-node, and edgeless graphs.
+  - **LDA Topic Coherence (`compute_topic_coherence` -> `TopicCoherenceResult`):** Computes per-topic and mean Gensim $C_v$ coherence (`processes=1`) from `TopicClusteringResult`.
+  - **Summarization ROUGE (`compute_rouge_score`, `evaluate_summaries` -> `RougeEvaluationResult`):** Computes per-document and macro-averaged ROUGE-1, ROUGE-2, and ROUGE-L (precision, recall, F1) from plain text mappings, decoupled from `summarizer.py`.
+- **Tests (`tests/test_evaluation.py`):**
+  - Added 6 offline unit tests covering directed/undirected graph topology, bridge betweenness, degenerate graphs, $C_v$ coherence, and ROUGE-1/2/L scoring and validation.
+
+### Verification
+- `uv run ruff check` & `uv run ruff format --check` on `evaluation.py` and `tests/test_evaluation.py`: passed (`All checks passed!`, `2 files already formatted`).
+- `uv run pytest -v`: 17/17 passed.
+- Architectural Result Audit (`pro` model): `🟢 CLEAN`.
