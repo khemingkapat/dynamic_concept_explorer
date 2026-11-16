@@ -157,7 +157,7 @@ class NodeSummary:
     """Short overview of one topic node and how it was produced.
 
     ``method`` and ``scope`` report what actually produced the text, which can differ from
-    what was requested when a fallback was taken.
+    what was requested when a fallback was taken (recorded in ``fallback_reason``).
     """
 
     text: str
@@ -165,6 +165,7 @@ class NodeSummary:
     method: str
     scope: str
     elapsed_ms: float
+    fallback_reason: str | None = None
 
 
 def split_sentences(text: str) -> list[str]:
@@ -296,7 +297,7 @@ def summarize_node(
     body: str = "",
     *,
     method: str = "textrank",
-    scope: str = "lead",
+    scope: str = "full",
     n_sentences: int = DEFAULT_NODE_SENTENCES,
     background: list[str] | None = None,
     abstractive: Abstractive | None = None,
@@ -309,14 +310,14 @@ def summarize_node(
     * ``"lexrank"``: extractive LexRank; ``background`` documents improve its IDF estimate.
     * ``"bart"``: abstractive BART, loaded on demand. ``abstractive`` overrides the default
       model. Output is trimmed to ``n_sentences`` complete sentences. If the model cannot be
-      loaded or fails, the result falls back to TextRank and ``NodeSummary.method`` records
-      that.
+      loaded or fails, the result falls back to TextRank and ``NodeSummary.fallback_reason``
+      records ``"bart_unavailable"``.
 
     ``scope`` selects the text the method ranks:
 
-    * ``"lead"`` (default): the lead section only. If it holds fewer than ``n_sentences``
+    * ``"full"`` (default): lead and body together.
+    * ``"lead"``: the lead section only. If it holds fewer than ``n_sentences``
       usable sentences, the full article is used instead.
-    * ``"full"``: lead and body together.
     """
     if method not in SUMMARY_METHODS:
         raise ValueError(f"Unknown summarization method: {method!r}")
@@ -329,6 +330,7 @@ def summarize_node(
     used_scope = "lead" if scope == "lead" and lead_is_enough else "full"
     source = lead if used_scope == "lead" else full_text
     used_method = method
+    fallback_reason: str | None = None
 
     sentences: list[str] = []
     if method == "bart" and source.strip():
@@ -339,11 +341,12 @@ def summarize_node(
         except Exception:  # missing weights, no network, OOM: degrade, do not crash the UI
             sentences = []
         if not sentences:
-            used_method = "textrank (bart unavailable)"
+            used_method = "textrank"
+            fallback_reason = "bart_unavailable"
     elif method == "lexrank":
         sentences = lexrank_sentences(source, n_sentences, background=background)
 
-    if method == "textrank" or used_method.startswith("textrank ("):
+    if used_method == "textrank":
         sentences = textrank_sentences(source, n_sentences)
 
     return NodeSummary(
@@ -352,4 +355,5 @@ def summarize_node(
         method=used_method,
         scope=used_scope,
         elapsed_ms=(time.perf_counter() - start) * 1000.0,
+        fallback_reason=fallback_reason,
     )

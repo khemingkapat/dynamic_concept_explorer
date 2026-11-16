@@ -16,12 +16,10 @@ human-written abstract). Pages are fetched through the scraper cache, so reruns 
 
 from __future__ import annotations
 
-import re
 import sys
 import time
-from collections import Counter
 
-from dynamic_concept_explorer import scraper, summarizer
+from dynamic_concept_explorer import evaluation, scraper, summarizer
 
 DEFAULT_TOPICS = [
     "Machine_learning",
@@ -31,20 +29,6 @@ DEFAULT_TOPICS = [
     "Game_theory",
     "Natural_language_processing",
 ]
-
-
-def _ngrams(text: str, n: int) -> Counter:
-    tokens = re.findall(r"[a-z0-9]+", text.lower())
-    return Counter(tuple(tokens[i : i + n]) for i in range(len(tokens) - n + 1))
-
-
-def rouge_n_f1(candidate: str, reference: str, n: int) -> float:
-    cand, ref = _ngrams(candidate, n), _ngrams(reference, n)
-    overlap = sum((cand & ref).values())
-    if not overlap:
-        return 0.0
-    precision, recall = overlap / sum(cand.values()), overlap / sum(ref.values())
-    return 2 * precision * recall / (precision + recall)
 
 
 def main(topics: list[str], use_bart: bool) -> None:
@@ -76,8 +60,9 @@ def main(topics: list[str], use_bart: bool) -> None:
 
             cells.append(f"{elapsed_ms:.1f}")
             if kwargs["scope"] == "full":
-                cells.append(f"{rouge_n_f1(summary.text, article.lead, 1):.3f}")
-                cells.append(f"{rouge_n_f1(summary.text, article.lead, 2):.3f}")
+                rouge = evaluation.compute_rouge_score(summary.text, article.lead)
+                cells.append(f"{rouge.rouge1.fmeasure:.3f}")
+                cells.append(f"{rouge.rouge2.fmeasure:.3f}")
         rows.append(cells)
 
     header = ["Topic", "Sents", "TR-lead ms", "TR-full ms", "TR-full R-1", "TR-full R-2"]

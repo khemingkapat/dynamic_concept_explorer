@@ -415,35 +415,6 @@ def _resolve_fetcher(
     )
 
 
-def extract_article_text(
-    body: Tag,
-    *,
-    skip_sections: frozenset[str] = DEFAULT_SKIP_SECTIONS,
-) -> str:
-    """Extract clean article prose from `div#bodyContent`, skipping boilerplate sections."""
-    paragraphs: list[str] = []
-    sections = _top_level_sections(body)
-    containers: list[Tag] = sections if sections else [body]
-
-    for container in containers:
-        if sections and _normalize_section_title(container).lower() in skip_sections:
-            continue
-        for p_tag in container.find_all("p"):
-            # Skip paragraphs inside nested boilerplate subsections
-            parent_section = p_tag.find_parent("section")
-            if (
-                parent_section is not None
-                and parent_section is not container
-                and _normalize_section_title(parent_section).lower() in skip_sections
-            ):
-                continue
-            text = p_tag.get_text(" ", strip=True)
-            if text:
-                paragraphs.append(text)
-
-    return " ".join(paragraphs)
-
-
 def fetch_neighborhood_documents(
     neighborhood: NeighborhoodResult,
     *,
@@ -453,15 +424,15 @@ def fetch_neighborhood_documents(
     cache_dir: Path = DEFAULT_CACHE_DIR,
     ttl_seconds: float | None = DEFAULT_CACHE_TTL_SECONDS,
     skip_sections: frozenset[str] = DEFAULT_SKIP_SECTIONS,
-) -> dict[str, str]:
-    """Fetch and extract clean prose for the seed and active candidate nodes."""
+) -> dict[str, ArticleText]:
+    """Fetch and extract clean ArticleText for the seed and active candidate nodes."""
     active_fetcher = _resolve_fetcher(
         fetcher,
         use_cache=use_cache,
         cache_dir=cache_dir,
         ttl_seconds=ttl_seconds,
     )
-    documents: dict[str, str] = {}
+    documents: dict[str, ArticleText] = {}
 
     seed_href = _extract_seed_href(neighborhood.seed_url)
     targets: list[tuple[str, str]] = [
@@ -480,9 +451,9 @@ def fetch_neighborhood_documents(
         body = get_body_content(soup)
         if body is None:
             continue
-        text = extract_article_text(body, skip_sections=skip_sections)
-        if text:
-            documents[node_id] = text
+        article = extract_article_text(body, skip_sections=skip_sections)
+        if article.full:
+            documents[node_id] = article
 
     return documents
 

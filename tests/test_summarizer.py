@@ -118,18 +118,32 @@ def test_rank_sentences_agrees_with_baseline_textrank() -> None:
 
 
 @pytest.mark.parametrize("topic", sorted(ACADEMIC_TOPICS))
-def test_summarize_node_default_is_textrank_over_lead_section(topic: str) -> None:
+def test_summarize_node_default_is_textrank_over_full_article(topic: str) -> None:
+    lead, body = ACADEMIC_TOPICS[topic]
+    full_source = summarizer.split_sentences(f"{lead}\n\n{body}")
+
+    summary = summarizer.summarize_node(lead, body)
+
+    assert (summary.method, summary.scope) == ("textrank", "full")
+    assert summary.fallback_reason is None
+    assert len(summary.sentences) == 2
+    positions = [full_source.index(sentence) for sentence in summary.sentences]
+    assert positions == sorted(positions)
+    assert summary.text == " ".join(summary.sentences)
+    assert summary.elapsed_ms >= 0.0
+
+
+@pytest.mark.parametrize("topic", sorted(ACADEMIC_TOPICS))
+def test_summarize_node_lead_scope_ranks_lead_section(topic: str) -> None:
     lead, body = ACADEMIC_TOPICS[topic]
     lead_source = summarizer.split_sentences(lead)
 
-    summary = summarizer.summarize_node(lead, body)
+    summary = summarizer.summarize_node(lead, body, scope="lead")
 
     assert (summary.method, summary.scope) == ("textrank", "lead")
     assert len(summary.sentences) == 2
     positions = [lead_source.index(sentence) for sentence in summary.sentences]
     assert positions == sorted(positions)
-    assert summary.text == " ".join(summary.sentences)
-    assert summary.elapsed_ms >= 0.0
 
 
 @pytest.mark.parametrize("method", ["textrank", "lexrank"])
@@ -152,7 +166,9 @@ def test_summarize_node_lexrank_accepts_background_corpus() -> None:
         f"{a} {b}" for name, (a, b) in ACADEMIC_TOPICS.items() if name != "photosynthesis"
     ]
 
-    summary = summarizer.summarize_node(lead, body, method="lexrank", background=background)
+    summary = summarizer.summarize_node(
+        lead, body, method="lexrank", scope="lead", background=background
+    )
 
     assert (summary.method, summary.scope) == ("lexrank", "lead")
     assert len(summary.sentences) == 2
@@ -162,7 +178,7 @@ def test_summarize_node_lexrank_accepts_background_corpus() -> None:
 def test_summarize_node_uses_full_article_when_lead_is_thin() -> None:
     _, body = ACADEMIC_TOPICS["photosynthesis"]
 
-    thin_lead = summarizer.summarize_node("Photosynthesis.", body)
+    thin_lead = summarizer.summarize_node("Photosynthesis.", body, scope="lead")
     no_text = summarizer.summarize_node("", "")
 
     assert (thin_lead.method, thin_lead.scope) == ("textrank", "full")
@@ -199,13 +215,17 @@ def test_summarize_node_bart_on_demand_and_fallback() -> None:
     def broken_bart(text: str) -> str:
         raise OSError("model weights are not available offline")
 
-    generated = summarizer.summarize_node(lead, body, method="bart", abstractive=fake_bart)
+    generated = summarizer.summarize_node(
+        lead, body, method="bart", scope="lead", abstractive=fake_bart
+    )
     degraded = summarizer.summarize_node(lead, body, method="bart", abstractive=broken_bart)
 
-    assert seen == [lead]  # only the lead is sent to the model, so it stays under 1024 tokens
+    assert seen == [lead]  # only the lead is sent when scope="lead"
     assert generated.method == "bart"
+    assert generated.fallback_reason is None
     assert generated.text == "Gravity is curved spacetime. Einstein published it in 1915."
-    assert degraded.method == "textrank (bart unavailable)"
+    assert degraded.method == "textrank"
+    assert degraded.fallback_reason == "bart_unavailable"
     assert degraded.sentences == summarizer.summarize_node(lead, body).sentences
 
 

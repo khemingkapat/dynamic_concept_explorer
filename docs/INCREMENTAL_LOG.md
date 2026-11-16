@@ -86,18 +86,19 @@
 
 ### What Was Built
 - **Article Text Extraction (`src/dynamic_concept_explorer/scraper.py`):**
-  - **`extract_article_text` → `ArticleText(lead, body, .full)`:** Clean prose split at the first `<h2>`. Strips citation markers (`[1]`, `[citation needed]`), math markup, edit links, and infobox paragraphs; skips the same boilerplate sections as link ranking. Works on `<section>`-wrapped and flat markup and does not mutate the parsed page. Issue #3 (LDA) can reuse `.full` as its document text.
+  - **`extract_article_text` → `ArticleText(lead, body, .full)`:** Clean prose split at the first `<h2>`. Strips citation markers (`[1]`, `[citation needed]`), math markup, edit links, and infobox paragraphs; skips the same boilerplate sections as link ranking. Works on `<section>`-wrapped and flat markup and does not mutate the parsed page.
+  - **`fetch_neighborhood_documents` → `dict[str, ArticleText]`:** Updated to return `ArticleText` per node so LDA (`doc.full`), summarizer (`doc.lead`, `doc.body`), and evaluation (`doc.lead`) share a single HTML parse.
 - **Node Summaries (`src/dynamic_concept_explorer/summarizer.py`):** only the three methods from README §2.2 are used.
-  - **`summarize_node(lead, body, method=..., scope=..., n_sentences=2)` → `NodeSummary(text, sentences, method, scope, elapsed_ms)`.**
+  - **`summarize_node(lead, body, method=..., scope=..., n_sentences=2)` → `NodeSummary(text, sentences, method, scope, elapsed_ms, fallback_reason=None)`.**
   - **`method`:** `textrank` (default), `lexrank` (optional `background` documents for IDF), `bart` (on demand).
-  - **`scope`:** `lead` (default) ranks the lead section, following the roadmap's "TextRank lead-section scoring"; it switches to the full article when the lead has fewer than `n_sentences` usable sentences. `full` ranks lead + body.
+  - **`scope`:** `full` (default) ranks lead + body together so the entire article is summarized; `lead` ranks the lead section and switches to `full` when the lead has fewer than `n_sentences` usable sentences.
   - **TextRank (`rank_sentences`, `textrank_sentences`):** README steps 1–5 unchanged in method (`sent_tokenize`, TF-IDF, zero-diagonal cosine matrix, `networkx` graph, `nx.pagerank`, top-k in original order). Graph construction uses the sparse product `X @ X.T` on L2-normalised TF-IDF rows instead of dense pairwise cosine. For nodes, `k` is fixed at 2 sentences instead of the ratio `r = 0.28`.
   - **LexRank (`lexrank_sentences`):** `lexrank` library with cosine threshold 0.25.
-  - **BART (`bart_node_summary`):** `facebook/bart-large-cnn`, loaded once per process and only when requested. Output is trimmed to `n_sentences` complete sentences: a last sentence cut off by the token limit is dropped. If it cannot load or fails, the result falls back to TextRank and is labelled `"textrank (bart unavailable)"`.
+  - **BART (`bart_node_summary`):** `facebook/bart-large-cnn`, loaded once per process and only when requested. Output is trimmed to `n_sentences` complete sentences: a last sentence cut off by the token limit is dropped. If it cannot load or fails, the result falls back to `method="textrank"` with `fallback_reason="bart_unavailable"`.
   - **Pre-filter for all extractive methods:** sentences outside 6–60 words are dropped and input is capped at 250 sentences. This is an addition not described in the README.
   - Coursework baselines (`textrank`, `lexrank_summary`, `bart_summary`) keep their behaviour; unused imports removed and file formatted with `ruff`.
-- **Comparison Script (`scripts/compare_node_summaries.py`):** Prints the overview, latency, and ROUGE-1/2 F1 against the article lead for TextRank-lead, TextRank-full, LexRank-full, and (with `--bart`) BART.
-- **Tests (`tests/test_summarizer.py`):** 21 offline tests — text extraction on both markup styles, agreement with the coursework TextRank's top sentence, default TextRank-over-lead and full-scope TextRank/LexRank across four academic topics (ML, photosynthesis, French Revolution, general relativity), LexRank with a background corpus, thin-lead switch to the full article, fragment filtering, BART on demand with an injected model, BART output trimming, BART failure fallback, and rejection of unknown methods/scopes.
+- **Comparison Script (`scripts/compare_node_summaries.py`):** Prints the overview, latency, and ROUGE-1/2 F1 (via `evaluation.compute_rouge_score`) against the article lead for TextRank-lead, TextRank-full, LexRank-full, and (with `--bart`) BART.
+- **Tests (`tests/test_summarizer.py`):** 25 offline test cases — text extraction on both markup styles, agreement with the coursework TextRank's top sentence, default TextRank-over-full, explicit `scope="lead"` and full-scope TextRank/LexRank across four academic topics (ML, photosynthesis, French Revolution, general relativity), LexRank with a background corpus, thin-lead switch to the full article, fragment filtering, BART on demand with an injected model, BART output trimming, BART failure fallback (`fallback_reason="bart_unavailable"`), and rejection of unknown methods/scopes.
 - **CI (`.github/workflows/ci.yml`):** Ruff now also covers `summarizer.py` and `scripts/`.
 
 ### Lead-Section vs Full-Article (live, 2026-11-16)
@@ -135,12 +136,9 @@ ROUGE is F1 against the article lead, reported only for full-article methods (Te
 
 ### Verification
 - `uv run ruff check` & `uv run ruff format --check` on `scraper.py`, `summarizer.py`, `tests/`, `scripts/`: passed.
-- `uv run pytest`: 27/27 passed (6 scraper + 21 summarizer).
-- `uv run python verify_baseline.py`: passed.
-- `uv run python scripts/compare_node_summaries.py --bart`: ran end to end with the real model on all six topics. Unit tests still use an injected stand-in so CI does not download the model.
+- `uv run pytest -v`: 42/42 passed (6 evaluation + 6 scraper + 25 summarizer + 5 topic_modeling).
+- Architectural Result Audit (`pro` model): `🟢 CLEAN` (rebased onto `main`, `scope="full"` default, `dict[str, ArticleText]` ingestion contract, structured `fallback_reason`, BART kept off UI).
 
 ### Follow-Up / Backlog
-- Merge `main` into this branch (PR #8, LDA topic clustering, was merged after the branch was cut).
-- Wire `extract_article_text` + `summarize_node` into the node payload for the UI (issue #4).
-- Reuse `rouge_n_f1` from the comparison script, or a ROUGE library, for the formal evaluation (issue #5).
+- Wire `fetch_neighborhood_documents` + `summarize_node` (TextRank/LexRank toggle, BART omitted) into the node payload for the UI (issue #4).
 - Formula-heavy articles lose inline math in body sentences; consider keeping `alttext` if full-article output is ever shown.
