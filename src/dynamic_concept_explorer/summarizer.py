@@ -4,8 +4,9 @@ Two layers live here:
 
 * Coursework baselines (``textrank``, ``lexrank_summary``, ``bart_summary``) extracted from
   ``summarize/CPE393_BBC_Summarization_Homework_Student.ipynb``. Their behaviour is unchanged.
-* Node overviews (``summarize_node``): fast 2-sentence definitions for every discovered concept,
-  using the article lead when it exists, full-body TextRank when it does not, and BART on demand.
+* Node overviews (``summarize_node``): 2-sentence overviews for every discovered concept using
+  the same three methods (TextRank by default, LexRank, BART on demand), applied to the lead
+  section or to the full article.
 """
 
 from __future__ import annotations
@@ -38,6 +39,9 @@ MIN_SENTENCE_WORDS = 6
 MAX_SENTENCE_WORDS = 60
 # TextRank is O(N^2) in sentences; long articles are capped to keep node latency bounded.
 MAX_TEXTRANK_SENTENCES = 250
+
+SUMMARY_METHODS = ("textrank", "lexrank", "bart")
+SUMMARY_SCOPES = ("lead", "full")
 
 Abstractive = Callable[[str], str]
 
@@ -149,11 +153,16 @@ def bart_summary(
 
 @dataclass(frozen=True)
 class NodeSummary:
-    """Short overview of one topic node and how it was produced."""
+    """Short overview of one topic node and how it was produced.
+
+    ``method`` and ``scope`` report what actually produced the text, which can differ from
+    what was requested when a fallback was taken.
+    """
 
     text: str
     sentences: list[str]
     method: str
+    scope: str
     elapsed_ms: float
 
 
@@ -167,65 +176,34 @@ def split_sentences(text: str) -> list[str]:
     return sentences
 
 
-def _is_overview_candidate(sentence: str) -> bool:
-    return MIN_SENTENCE_WORDS <= len(sentence.split()) <= MAX_SENTENCE_WORDS
-
-
-def pagerank_scores(
-    similarity: np.ndarray,
-    *,
-    damping: float = 0.85,
-    max_iter: int = 100,
-    tol: float = 1e-6,
-) -> np.ndarray:
-    """PageRank over a dense weighted similarity matrix by vectorised power iteration.
-
-    Numerically equivalent to ``nx.pagerank`` on the same graph (uniform teleport, dangling
-    rows redistributed uniformly) without the cost of building a NetworkX graph object.
-    """
-    n = similarity.shape[0]
-    if n == 0:
-        return np.zeros(0)
-
-    row_sums = similarity.sum(axis=1)
-    dangling = row_sums == 0
-    transition = np.divide(
-        similarity,
-        row_sums[:, None],
-        out=np.zeros_like(similarity, dtype=float),
-        where=~dangling[:, None],
-    )
-
-    scores = np.full(n, 1.0 / n)
-    for _ in range(max_iter):
-        previous = scores
-        dangling_mass = previous[dangling].sum() / n
-        scores = damping * (previous @ transition + dangling_mass) + (1.0 - damping) / n
-        if np.abs(scores - previous).sum() < n * tol:
-            break
-    return scores
+def _candidate_sentences(text: str, max_sentences: int) -> list[str]:
+    candidates = [
+        s
+        for s in split_sentences(text)
+        if MIN_SENTENCE_WORDS <= len(s.split()) <= MAX_SENTENCE_WORDS
+    ]
+    return candidates[:max_sentences]
 
 
 def rank_sentences(sentences: list[str]) -> np.ndarray:
-    """TextRank centrality score for each sentence (TF-IDF cosine graph + PageRank)."""
+    """TextRank score per sentence: TF-IDF cosine graph scored with ``nx.pagerank``.
+
+    Same method as the baseline ``textrank``. The only change is graph construction: TF-IDF
+    rows are L2-normalised, so the sparse product ``X @ X.T`` is the cosine similarity matrix
+    and the dense pairwise computation is skipped.
+    """
     n = len(sentences)
     if n == 0:
         return np.zeros(0)
     try:
-        # Rows are L2-normalised, so the sparse product X @ X.T is the cosine similarity.
         tfidf = TfidfVectorizer(stop_words="english").fit_transform(sentences)
     except ValueError:  # every sentence was empty or stopwords only
         return np.full(n, 1.0 / n)
 
     similarity = (tfidf @ tfidf.T).toarray()
     np.fill_diagonal(similarity, 0.0)
-    return pagerank_scores(similarity)
-
-
-def lead_sentences(lead: str, n_sentences: int = DEFAULT_NODE_SENTENCES) -> list[str]:
-    """First ``n_sentences`` usable sentences of the article lead (Lead-k baseline)."""
-    candidates = [s for s in split_sentences(lead) if _is_overview_candidate(s)]
-    return candidates[: max(0, n_sentences)]
+    scores = nx.pagerank(nx.from_numpy_array(similarity))
+    return np.array([scores[i] for i in range(n)])
 
 
 def textrank_sentences(
@@ -237,8 +215,7 @@ def textrank_sentences(
     """Top ``n_sentences`` TextRank sentences of ``text``, restored to document order."""
     if n_sentences <= 0:
         return []
-    candidates = [s for s in split_sentences(text) if _is_overview_candidate(s)]
-    candidates = candidates[:max_sentences]
+    candidates = _candidate_sentences(text, max_sentences)
     if len(candidates) <= n_sentences:
         return candidates
 
@@ -246,6 +223,32 @@ def textrank_sentences(
     # Stable sort keeps the earlier sentence when scores tie.
     top = sorted(np.argsort(-scores, kind="stable")[:n_sentences].tolist())
     return [candidates[i] for i in top]
+
+
+def lexrank_sentences(
+    text: str,
+    n_sentences: int = DEFAULT_NODE_SENTENCES,
+    *,
+    background: list[str] | None = None,
+    threshold: float | None = 0.25,
+    max_sentences: int = MAX_TEXTRANK_SENTENCES,
+) -> list[str]:
+    """Top ``n_sentences`` LexRank sentences of ``text``, restored to document order.
+
+    ``background`` is a list of other documents (for example the other nodes' articles) used
+    to estimate IDF. Without it, IDF is estimated from ``text`` alone.
+    """
+    if n_sentences <= 0:
+        return []
+    candidates = _candidate_sentences(text, max_sentences)
+    if len(candidates) <= n_sentences:
+        return candidates
+
+    corpus = [split_sentences(doc) for doc in background or [] if doc.strip()]
+    corpus.append(candidates)
+    lxr = LexRank(corpus, stopwords=STOPWORDS["en"])
+    picked = set(lxr.get_summary(candidates, summary_size=n_sentences, threshold=threshold))
+    return [s for s in candidates if s in picked][:n_sentences]
 
 
 @lru_cache(maxsize=1)
@@ -279,56 +282,59 @@ def summarize_node(
     lead: str,
     body: str = "",
     *,
-    method: str = "auto",
+    method: str = "textrank",
+    scope: str = "lead",
     n_sentences: int = DEFAULT_NODE_SENTENCES,
+    background: list[str] | None = None,
     abstractive: Abstractive | None = None,
 ) -> NodeSummary:
-    """Produce a short overview for one topic node.
+    """Produce a short overview for one topic node with one of the README methods.
 
     ``method``:
 
-    * ``"auto"`` (default): lead sentences; full-body TextRank when the lead is too thin.
-    * ``"lead"``: first ``n_sentences`` of the lead only.
-    * ``"textrank"``: TextRank over lead + body.
-    * ``"bart"``: abstractive summary of the lead (body if there is no lead). ``abstractive``
-      overrides the default BART model. If the model cannot be loaded or fails, the result
-      falls back to the extractive ``"auto"`` path and ``method`` records that.
+    * ``"textrank"`` (default): extractive TextRank.
+    * ``"lexrank"``: extractive LexRank; ``background`` documents improve its IDF estimate.
+    * ``"bart"``: abstractive BART, loaded on demand. ``abstractive`` overrides the default
+      model. If the model cannot be loaded or fails, the result falls back to TextRank and
+      ``NodeSummary.method`` records that.
 
-    ``NodeSummary.method`` reports what actually produced the text.
+    ``scope`` selects the text the method ranks:
+
+    * ``"lead"`` (default): the lead section only. If it holds fewer than ``n_sentences``
+      usable sentences, the full article is used instead.
+    * ``"full"``: lead and body together.
     """
-    if method not in {"auto", "lead", "textrank", "bart"}:
+    if method not in SUMMARY_METHODS:
         raise ValueError(f"Unknown summarization method: {method!r}")
+    if scope not in SUMMARY_SCOPES:
+        raise ValueError(f"Unknown summarization scope: {scope!r}")
 
     start = time.perf_counter()
     full_text = "\n\n".join(part for part in (lead, body) if part.strip())
-    used = method
+    lead_is_enough = len(_candidate_sentences(lead, n_sentences)) >= n_sentences
+    used_scope = "lead" if scope == "lead" and lead_is_enough else "full"
+    source = lead if used_scope == "lead" else full_text
+    used_method = method
 
-    if method == "bart":
-        source = lead if lead.strip() else body
-        sentences: list[str] = []
-        if source.strip():
-            try:
-                text = (abstractive or bart_node_summary)(source).strip()
-                sentences = split_sentences(text)
-            except Exception:  # missing weights, no network, OOM: degrade, do not crash the UI
-                sentences = []
+    sentences: list[str] = []
+    if method == "bart" and source.strip():
+        # BART reads at most 1024 tokens, so the lead goes first when the scope is the article.
+        try:
+            sentences = split_sentences((abstractive or bart_node_summary)(source).strip())
+        except Exception:  # missing weights, no network, OOM: degrade, do not crash the UI
+            sentences = []
         if not sentences:
-            fallback = summarize_node(lead, body, method="auto", n_sentences=n_sentences)
-            sentences, used = fallback.sentences, f"{fallback.method} (bart unavailable)"
-    elif method == "lead":
-        sentences = lead_sentences(lead, n_sentences)
-    elif method == "textrank":
-        sentences = textrank_sentences(full_text, n_sentences)
-    else:
-        sentences = lead_sentences(lead, n_sentences)
-        used = "lead"
-        if len(sentences) < n_sentences and body.strip():
-            sentences = textrank_sentences(full_text, n_sentences)
-            used = "textrank"
+            used_method = "textrank (bart unavailable)"
+    elif method == "lexrank":
+        sentences = lexrank_sentences(source, n_sentences, background=background)
+
+    if method == "textrank" or used_method.startswith("textrank ("):
+        sentences = textrank_sentences(source, n_sentences)
 
     return NodeSummary(
         text=" ".join(sentences),
         sentences=sentences,
-        method=used,
+        method=used_method,
+        scope=used_scope,
         elapsed_ms=(time.perf_counter() - start) * 1000.0,
     )

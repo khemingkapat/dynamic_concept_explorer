@@ -1,12 +1,17 @@
-"""Compare lead-paragraph extraction against full-body TextRank on live Wikipedia articles.
+"""Compare the README summarization methods on live Wikipedia articles.
 
 Usage:
-    uv run python scripts/compare_node_summaries.py [Article_Title ...]
+    uv run python scripts/compare_node_summaries.py [--bart] [Article_Title ...]
 
-For each topic it prints both 2-sentence overviews, their latency, and ROUGE-1/2 F1 of the
-body-only TextRank summary against the article lead (the human-written abstract). It also times
-the vectorised PageRank against the coursework ``nx.pagerank`` TextRank on the same sentences.
-Pages are fetched through the scraper cache, so reruns are offline.
+For each topic it prints the 2-sentence node overview from:
+
+* TextRank over the lead section (the default used for nodes),
+* TextRank over the full article,
+* LexRank over the full article,
+* BART over the lead section (only with ``--bart``; downloads the model on first use),
+
+with latency, plus ROUGE-1/2 F1 of the full-article methods against the article lead (the
+human-written abstract). Pages are fetched through the scraper cache, so reruns are offline.
 """
 
 from __future__ import annotations
@@ -42,16 +47,15 @@ def rouge_n_f1(candidate: str, reference: str, n: int) -> float:
     return 2 * precision * recall / (precision + recall)
 
 
-def _time_ms(fn, repeats: int = 3) -> float:
-    best = float("inf")
-    for _ in range(repeats):
-        start = time.perf_counter()
-        fn()
-        best = min(best, (time.perf_counter() - start) * 1000.0)
-    return best
+def main(topics: list[str], use_bart: bool) -> None:
+    variants = [
+        ("TextRank lead", {"method": "textrank", "scope": "lead"}),
+        ("TextRank full", {"method": "textrank", "scope": "full"}),
+        ("LexRank full", {"method": "lexrank", "scope": "full"}),
+    ]
+    if use_bart:
+        variants.append(("BART lead", {"method": "bart", "scope": "lead"}))
 
-
-def main(topics: list[str]) -> None:
     rows = []
     for topic in topics:
         soup = scraper.fetch_wikipedia_page(f"{scraper.WIKIPEDIA_BASE_URL}/wiki/{topic}")
@@ -60,40 +64,32 @@ def main(topics: list[str]) -> None:
             print(f"!! {topic}: no bodyContent")
             continue
         article = scraper.extract_article_text(body)
+        n_sentences = len(summarizer.split_sentences(article.full))
 
-        lead = summarizer.summarize_node(article.lead, article.body, method="lead")
-        rank = summarizer.summarize_node("", article.body, method="textrank")
+        print(f"\n=== {topic} ({n_sentences} sentences) ===")
+        cells = [topic, str(n_sentences)]
+        for label, kwargs in variants:
+            start = time.perf_counter()
+            summary = summarizer.summarize_node(article.lead, article.body, **kwargs)
+            elapsed_ms = (time.perf_counter() - start) * 1000.0
+            print(f"[{label} -> {summary.method}/{summary.scope}] {summary.text}")
 
-        n_sentences = len(summarizer.split_sentences(article.body))
-        lead_ms = _time_ms(lambda a=article: summarizer.summarize_node(a.lead, a.body))
-        rank_ms = _time_ms(
-            lambda a=article: summarizer.summarize_node("", a.body, method="textrank")
-        )
-        base_ms = _time_ms(lambda a=article: summarizer.textrank(a.body, ratio=0.01), repeats=1)
+            cells.append(f"{elapsed_ms:.1f}")
+            if kwargs["scope"] == "full":
+                cells.append(f"{rouge_n_f1(summary.text, article.lead, 1):.3f}")
+                cells.append(f"{rouge_n_f1(summary.text, article.lead, 2):.3f}")
+        rows.append(cells)
 
-        rows.append(
-            (
-                topic,
-                n_sentences,
-                lead_ms,
-                rank_ms,
-                base_ms,
-                rouge_n_f1(rank.text, article.lead, 1),
-                rouge_n_f1(rank.text, article.lead, 2),
-            )
-        )
-        print(f"\n=== {topic} ({n_sentences} body sentences) ===")
-        print(f"[lead]     {lead.text}")
-        print(f"[textrank] {rank.text}")
-
-    header = ["Topic", "Body sents", "Lead ms", "TextRank ms", "Baseline nx ms", "R-1", "R-2"]
+    header = ["Topic", "Sents", "TR-lead ms", "TR-full ms", "TR-full R-1", "TR-full R-2"]
+    header += ["LR-full ms", "LR-full R-1", "LR-full R-2"]
+    if use_bart:
+        header.append("BART ms")
     print("\n| " + " | ".join(header) + " |")
-    print("| :--- | ---: | ---: | ---: | ---: | ---: | ---: |")
-    for topic, n, lead_ms, rank_ms, base_ms, r1, r2 in rows:
-        cells = [topic, str(n), f"{lead_ms:.1f}", f"{rank_ms:.1f}", f"{base_ms:.1f}"]
-        cells += [f"{r1:.3f}", f"{r2:.3f}"]
+    print("| :--- |" + " ---: |" * (len(header) - 1))
+    for cells in rows:
         print("| " + " | ".join(cells) + " |")
 
 
 if __name__ == "__main__":
-    main(sys.argv[1:] or DEFAULT_TOPICS)
+    args = sys.argv[1:]
+    main([a for a in args if a != "--bart"] or DEFAULT_TOPICS, "--bart" in args)

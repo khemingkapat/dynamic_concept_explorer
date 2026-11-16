@@ -78,45 +78,54 @@
 
 ---
 
-## 2026-11-16 — Issue #2: Node Overviews (Lead Extraction, Fast TextRank, On-Demand BART)
+## 2026-11-16 — Issue #2: Node Overviews with the README Methods (TextRank, LexRank, BART)
 
 - **Branch:** `feat/summarizer-node-overviews`
 - **Issue:** [#2](https://github.com/khemingkapat/dynamic_concept_explorer/issues/2) — `feat(summarizer): adapt extractive TextRank and distillation for topic nodes`
+- **Status:** work in progress.
 
 ### What Was Built
 - **Article Text Extraction (`src/dynamic_concept_explorer/scraper.py`):**
   - **`extract_article_text` → `ArticleText(lead, body, .full)`:** Clean prose split at the first `<h2>`. Strips citation markers (`[1]`, `[citation needed]`), math markup, edit links, and infobox paragraphs; skips the same boilerplate sections as link ranking. Works on `<section>`-wrapped and flat markup and does not mutate the parsed page. Issue #3 (LDA) can reuse `.full` as its document text.
-- **Node Summaries (`src/dynamic_concept_explorer/summarizer.py`):**
-  - **`summarize_node(lead, body, method=..., n_sentences=2)` → `NodeSummary(text, sentences, method, elapsed_ms)`:** `auto` (default) returns the first 2 usable lead sentences and falls back to full-body TextRank when the lead is too thin; `lead`, `textrank`, and `bart` force one strategy. `NodeSummary.method` records what actually produced the text.
-  - **Faster TextRank (`rank_sentences`, `pagerank_scores`, `textrank_sentences`):** Sparse TF-IDF product for cosine similarity plus vectorised power-iteration PageRank instead of building a NetworkX graph; sentences outside 6–60 words are dropped and input is capped at 250 sentences.
-  - **On-demand BART (`bart_node_summary`, `method="bart"`):** Model is loaded once per process and only when requested; only the lead is sent so input stays under 1024 tokens. If the model cannot load or fails, the result degrades to the extractive path and is labelled `"lead (bart unavailable)"`.
+- **Node Summaries (`src/dynamic_concept_explorer/summarizer.py`):** only the three methods from README §2.2 are used.
+  - **`summarize_node(lead, body, method=..., scope=..., n_sentences=2)` → `NodeSummary(text, sentences, method, scope, elapsed_ms)`.**
+  - **`method`:** `textrank` (default), `lexrank` (optional `background` documents for IDF), `bart` (on demand).
+  - **`scope`:** `lead` (default) ranks the lead section, following the roadmap's "TextRank lead-section scoring"; it switches to the full article when the lead has fewer than `n_sentences` usable sentences. `full` ranks lead + body.
+  - **TextRank (`rank_sentences`, `textrank_sentences`):** README steps 1–5 unchanged in method (`sent_tokenize`, TF-IDF, zero-diagonal cosine matrix, `networkx` graph, `nx.pagerank`, top-k in original order). Graph construction uses the sparse product `X @ X.T` on L2-normalised TF-IDF rows instead of dense pairwise cosine. For nodes, `k` is fixed at 2 sentences instead of the ratio `r = 0.28`.
+  - **LexRank (`lexrank_sentences`):** `lexrank` library with cosine threshold 0.25.
+  - **BART (`bart_node_summary`):** `facebook/bart-large-cnn`, loaded once per process and only when requested. If it cannot load or fails, the result falls back to TextRank and is labelled `"textrank (bart unavailable)"`.
+  - **Pre-filter for all extractive methods:** sentences outside 6–60 words are dropped and input is capped at 250 sentences. This is an addition not described in the README.
   - Coursework baselines (`textrank`, `lexrank_summary`, `bart_summary`) keep their behaviour; unused imports removed and file formatted with `ruff`.
-- **Comparison Script (`scripts/compare_node_summaries.py`):** Prints both overviews, latency, and ROUGE-1/2 F1 of body-only TextRank against the article lead for any list of article titles.
-- **Tests (`tests/test_summarizer.py`):** 16 offline tests — text extraction on both markup styles, PageRank equivalence with `nx.pagerank` (including a dangling node), agreement with the coursework TextRank's top sentence, 2-sentence overviews across four academic topics (ML, photosynthesis, French Revolution, general relativity), thin-lead fallback, fragment filtering, BART on demand with an injected model, and BART failure fallback.
+- **Comparison Script (`scripts/compare_node_summaries.py`):** Prints the overview, latency, and ROUGE-1/2 F1 against the article lead for TextRank-lead, TextRank-full, LexRank-full, and (with `--bart`) BART.
+- **Tests (`tests/test_summarizer.py`):** 20 offline tests — text extraction on both markup styles, agreement with the coursework TextRank's top sentence, default TextRank-over-lead and full-scope TextRank/LexRank across four academic topics (ML, photosynthesis, French Revolution, general relativity), LexRank with a background corpus, thin-lead switch to the full article, fragment filtering, BART on demand with an injected model, BART failure fallback, and rejection of unknown methods/scopes.
 - **CI (`.github/workflows/ci.yml`):** Ruff now also covers `summarizer.py` and `scripts/`.
 
-### Lead vs Full-Body TextRank (live, 2026-11-16)
+### Lead-Section vs Full-Article (live, 2026-11-16)
 
-| Topic | Body sents | Lead ms | TextRank ms | Baseline nx ms | R-1 vs lead | R-2 vs lead |
-| :--- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Machine_learning | 381 | 0.2 | 14.2 | 212.9 | 0.216 | 0.045 |
-| Photosynthesis | 282 | 0.6 | 12.9 | 54.0 | 0.103 | 0.025 |
-| French_Revolution | 543 | 0.3 | 19.9 | 93.5 | 0.186 | 0.035 |
-| General_relativity | 352 | 0.5 | 16.6 | 240.5 | 0.160 | 0.050 |
-| Game_theory | 360 | 0.2 | 13.5 | 77.1 | 0.158 | 0.009 |
-| Natural_language_processing | 42 | 0.1 | 3.3 | 5.5 | 0.339 | 0.069 |
+ROUGE is F1 against the article lead, reported only for full-article methods (TextRank-lead selects from the lead itself, so scoring it against the lead would be circular).
 
-- **Decision: lead extraction is the default.** Lead sentences are definitions ("X is a ..."), which is what a node popover needs; body TextRank picks central but mid-article detail sentences (ROUGE-2 against the lead ≤ 0.07) and breaks on formula-heavy articles such as Game_theory, where stripped math leaves gaps. TextRank is kept as the fallback for pages without a usable lead.
-- **Latency caveat:** the "Baseline nx" column ranks every body sentence while the new path ranks at most 250 filtered sentences, so the speed-up combines the sentence cap and the vectorised PageRank; it is not a like-for-like measure of PageRank alone.
-- **ROUGE caveat:** the lead is used as the reference, so these scores measure how well body TextRank recovers the abstract; they are not a fair score for the lead strategy itself.
+| Topic | Sents | TR-lead ms | TR-full ms | TR-full R-1 | TR-full R-2 | LR-full ms | LR-full R-1 | LR-full R-2 |
+| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Machine_learning | 388 | 20.2 | 131.7 | 0.216 | 0.045 | 307.6 | 0.122 | 0.009 |
+| Photosynthesis | 306 | 4.4 | 36.7 | 0.089 | 0.032 | 285.0 | 0.110 | 0.018 |
+| French_Revolution | 556 | 3.5 | 35.0 | 0.262 | 0.179 | 294.4 | 0.143 | 0.025 |
+| General_relativity | 372 | 4.1 | 37.7 | 0.301 | 0.299 | 304.3 | 0.098 | 0.018 |
+| Game_theory | 366 | 3.1 | 42.3 | 0.158 | 0.009 | 278.8 | 0.103 | 0.010 |
+| Natural_language_processing | 46 | 3.3 | 5.2 | 0.695 | 0.667 | 49.2 | 0.243 | 0.014 |
+
+- **Default: TextRank over the lead section.** In all six topics it returned the defining first sentence plus one other lead sentence, in 3–20 ms (the 20 ms on the first topic includes first-call warm-up).
+- **TextRank over the full article** picked a lead sentence in three of six topics but returned mid-article detail in the others, and unreadable text for Game_theory, where stripped formulas leave gaps.
+- **LexRank over the full article** never picked a lead sentence (ROUGE-2 ≤ 0.025) and was the slowest extractive option (about 280–310 ms on long articles).
+- Timings are single runs on one laptop.
 
 ### Verification
 - `uv run ruff check` & `uv run ruff format --check` on `scraper.py`, `summarizer.py`, `tests/`, `scripts/`: passed.
-- `uv run pytest`: 22/22 passed (6 scraper + 16 summarizer).
+- `uv run pytest`: 26/26 passed (6 scraper + 20 summarizer).
 - `uv run python verify_baseline.py`: passed.
 - Not run: the real `facebook/bart-large-cnn` model (about 1.6 GB download); the BART path is covered only with an injected stand-in.
 
 ### Follow-Up / Backlog
+- Run `scripts/compare_node_summaries.py --bart` once to record real BART output and latency.
 - Wire `extract_article_text` + `summarize_node` into the node payload for the UI (issue #4).
 - Reuse `rouge_n_f1` from the comparison script, or a ROUGE library, for the formal evaluation (issue #5).
-- Formula-heavy articles lose inline math in body sentences; consider keeping `alttext` if TextRank output is ever shown.
+- Formula-heavy articles lose inline math in body sentences; consider keeping `alttext` if full-article output is ever shown.

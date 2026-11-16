@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import networkx as nx
 import numpy as np
 import pytest
 from bs4 import BeautifulSoup
@@ -104,22 +103,7 @@ def test_extract_article_text_handles_section_wrapped_markup() -> None:
     assert article.body == "Body paragraph.\n\nNested paragraph."
 
 
-def test_pagerank_scores_match_networkx() -> None:
-    rng = np.random.default_rng(7)
-    similarity = rng.random((12, 12))
-    similarity = (similarity + similarity.T) / 2
-    np.fill_diagonal(similarity, 0.0)
-    similarity[3, :] = 0.0  # isolated (dangling) sentence
-    similarity[:, 3] = 0.0
-
-    expected = nx.pagerank(nx.from_numpy_array(similarity))
-    scores = summarizer.pagerank_scores(similarity)
-
-    assert scores.sum() == pytest.approx(1.0, abs=1e-6)
-    np.testing.assert_allclose(scores, [expected[i] for i in range(12)], atol=1e-5)
-
-
-def test_textrank_sentences_agree_with_baseline_ranking() -> None:
+def test_rank_sentences_agrees_with_baseline_textrank() -> None:
     lead, body = ACADEMIC_TOPICS["machine_learning"]
     text = f"{lead} {body}"
     sentences = summarizer.split_sentences(text)
@@ -127,44 +111,61 @@ def test_textrank_sentences_agree_with_baseline_ranking() -> None:
     scores = summarizer.rank_sentences(sentences)
     best = sentences[int(np.argmax(scores))]
 
-    # The coursework TextRank (nx.pagerank) must pick the same most-central sentence.
+    assert scores.sum() == pytest.approx(1.0, abs=1e-6)
+    # The coursework TextRank must pick the same most-central sentence.
     assert summarizer.textrank(text, ratio=1 / len(sentences)) == [best]
     assert best in summarizer.textrank_sentences(text, n_sentences=2)
 
 
 @pytest.mark.parametrize("topic", sorted(ACADEMIC_TOPICS))
-def test_summarize_node_auto_gives_two_sentence_lead_overview(topic: str) -> None:
+def test_summarize_node_default_is_textrank_over_lead_section(topic: str) -> None:
     lead, body = ACADEMIC_TOPICS[topic]
+    lead_source = summarizer.split_sentences(lead)
 
     summary = summarizer.summarize_node(lead, body)
 
-    assert summary.method == "lead"
+    assert (summary.method, summary.scope) == ("textrank", "lead")
     assert len(summary.sentences) == 2
-    assert summary.sentences == summarizer.split_sentences(lead)[:2]
+    positions = [lead_source.index(sentence) for sentence in summary.sentences]
+    assert positions == sorted(positions)
     assert summary.text == " ".join(summary.sentences)
     assert summary.elapsed_ms >= 0.0
 
 
+@pytest.mark.parametrize("method", ["textrank", "lexrank"])
 @pytest.mark.parametrize("topic", sorted(ACADEMIC_TOPICS))
-def test_summarize_node_textrank_is_extractive_and_ordered(topic: str) -> None:
+def test_summarize_node_full_scope_is_extractive_and_ordered(topic: str, method: str) -> None:
     lead, body = ACADEMIC_TOPICS[topic]
     source = summarizer.split_sentences(f"{lead}\n\n{body}")
 
-    summary = summarizer.summarize_node(lead, body, method="textrank")
+    summary = summarizer.summarize_node(lead, body, method=method, scope="full")
 
-    assert summary.method == "textrank"
+    assert (summary.method, summary.scope) == (method, "full")
     assert len(summary.sentences) == 2
     positions = [source.index(sentence) for sentence in summary.sentences]
     assert positions == sorted(positions)
 
 
-def test_summarize_node_auto_falls_back_to_textrank_without_lead() -> None:
+def test_summarize_node_lexrank_accepts_background_corpus() -> None:
+    lead, body = ACADEMIC_TOPICS["photosynthesis"]
+    background = [
+        f"{a} {b}" for name, (a, b) in ACADEMIC_TOPICS.items() if name != "photosynthesis"
+    ]
+
+    summary = summarizer.summarize_node(lead, body, method="lexrank", background=background)
+
+    assert (summary.method, summary.scope) == ("lexrank", "lead")
+    assert len(summary.sentences) == 2
+    assert all(sentence in lead for sentence in summary.sentences)
+
+
+def test_summarize_node_uses_full_article_when_lead_is_thin() -> None:
     _, body = ACADEMIC_TOPICS["photosynthesis"]
 
     thin_lead = summarizer.summarize_node("Photosynthesis.", body)
     no_text = summarizer.summarize_node("", "")
 
-    assert thin_lead.method == "textrank"
+    assert (thin_lead.method, thin_lead.scope) == ("textrank", "full")
     assert len(thin_lead.sentences) == 2
     assert all(sentence in body for sentence in thin_lead.sentences)
     assert no_text.text == ""
@@ -178,11 +179,12 @@ def test_summarize_node_skips_fragments_and_respects_n_sentences() -> None:
         "bending but not tearing. Knot theory is one of its best known subfields today."
     )
 
-    one = summarizer.summarize_node(lead, method="lead", n_sentences=1)
-    three = summarizer.summarize_node(lead, method="lead", n_sentences=3)
+    one = summarizer.summarize_node(lead, n_sentences=1)
+    three = summarizer.summarize_node(lead, n_sentences=3)
 
-    assert one.sentences[0].startswith("Topology is the branch")
+    assert len(one.sentences) == 1
     assert len(three.sentences) == 3
+    assert three.sentences[0].startswith("Topology is the branch")
     assert not any("Main article" in sentence for sentence in three.sentences)
 
 
@@ -203,10 +205,12 @@ def test_summarize_node_bart_on_demand_and_fallback() -> None:
     assert seen == [lead]  # only the lead is sent to the model, so it stays under 1024 tokens
     assert generated.method == "bart"
     assert generated.text == "Gravity is curved spacetime. Einstein published it in 1915."
-    assert degraded.method == "lead (bart unavailable)"
-    assert degraded.sentences == summarizer.split_sentences(lead)[:2]
+    assert degraded.method == "textrank (bart unavailable)"
+    assert degraded.sentences == summarizer.summarize_node(lead, body).sentences
 
 
-def test_summarize_node_rejects_unknown_method() -> None:
+def test_summarize_node_rejects_unknown_method_and_scope() -> None:
     with pytest.raises(ValueError, match="Unknown summarization method"):
-        summarizer.summarize_node("Some lead text.", method="gpt")
+        summarizer.summarize_node("Some lead text.", method="lead")
+    with pytest.raises(ValueError, match="Unknown summarization scope"):
+        summarizer.summarize_node("Some lead text.", scope="body")
