@@ -55,13 +55,13 @@ Given a seed URL (for example, `https://en.wikipedia.org/wiki/Text_mining`), the
    The scraper collects internal `/wiki/...` links and uses **regex pattern matching** to strip URL fragments (`#...`), remove non-article pages (`Special:`, `Help:`, `File:`, `Category:`), and skip boilerplate sections (`See also`, `References`, `External links`, `Notes`, `Further reading`, `Bibliography`, `Sources`). Each link is scored so that links in the opening summary (`in_lead`) and repeated links score higher:
 
 $$
-\text{score}(v) = 2 \cdot \text{in\_lead}(v) + \ln(1 + \text{count}(v))
+\mathrm{score}(v) = 2 \cdot I_{\mathrm{lead}}(v) + \ln(1 + \mathrm{count}(v))
 $$
 
    Only the top $k = 20$ candidate links are kept.
 
 2. **Pass 2 — Pruning Weak Links:**
-   The scraper fetches those 20 pages (using a local JSON cache in `.cache/wiki/` so repeated runs are fast) and counts how many of the other top-20 pages link back to each candidate (**in-degree**). Any page with $\text{in\_degree} < 2$ is removed, unless fewer than 5 nodes would remain (`min_nodes = 5`). This stops the graph from growing out of control.
+   The scraper fetches those 20 pages (using a local JSON cache in `.cache/wiki/` so repeated runs are fast) and counts how many of the other top-20 pages link back to each candidate (**in-degree**). Any page with `in_degree < 2` is removed, unless fewer than 5 nodes would remain (`min_nodes = 5`). This stops the graph from growing out of control.
 
 ### 3.2 Text Cleaning and Preprocessing
 
