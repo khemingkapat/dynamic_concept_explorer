@@ -58,7 +58,7 @@ $$
 \mathrm{score}(v) = 2 \cdot I_{\mathrm{lead}}(v) + \ln(1 + \mathrm{count}(v))
 $$
 
-   Only the top $k = 20$ candidate links are kept.
+   Here, $I_{\mathrm{lead}}(v) \in \{0, 1\}$ is `1` if link $v$ appears in the opening lead section (giving foundational intro concepts a `+2.0` head start), and $\ln(1 + \mathrm{count}(v))$ adds diminishing-returns weight for repeated mentions across the article—so a link mentioned once in the intro (`2.69`) outranks a tangential link mentioned 5 times in a later section (`1.79`). Only the top $k = 20$ candidate links are kept.
 
 2. **Pass 2 — Pruning Weak Links:**
    The scraper fetches those 20 pages (using a local JSON cache in `.cache/wiki/` so repeated runs are fast) and counts how many of the other top-20 pages link back to each candidate (**in-degree**). Any page with `in_degree < 2` is removed, unless fewer than 5 nodes would remain (`min_nodes = 5`). This stops the graph from growing out of control.
