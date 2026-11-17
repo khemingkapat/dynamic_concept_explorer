@@ -10,6 +10,14 @@ jobs:
   lint-and-test:
     runs-on: ubuntu-latest
     steps:
+      - name: Check branch naming convention
+        if: github.event_name == 'pull_request'
+        run: |
+          if [[ ! "${{ github.head_ref }}" =~ ^(feat|fix|docs|chore|refactor)/.+ ]]; then
+            echo "Branch name '${{ github.head_ref }}' must start with feat/, fix/, docs/, chore/, or refactor/."
+            exit 1
+          fi
+
       - uses: actions/checkout@v4
 
       - name: Install uv
