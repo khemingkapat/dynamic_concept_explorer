@@ -159,7 +159,31 @@ After preprocessing and filtering, the LDA dictionary had **1,344 words**. Runni
 
 1. **TextRank works much better than LexRank here:** `TextRank (full)` ran **over 10x faster** (mean 12.3 ms vs. 151.3 ms) and scored much higher on ROUGE-2 (`0.212` vs. `0.014`). LexRank often picked mid-article examples (like spam filters) instead of the main definition.
 2. **TextRank (`lead`) is the fastest option (~3–6 ms per node),** though stripping `[1]` citations can occasionally leave small text artifacts like `(2005), there are...`.
-3. **BART is too slow for real-time graphs on CPU:** In our 6-topic test logged in [`INCREMENTAL_LOG.md`](INCREMENTAL_LOG.md), `facebook/bart-large-cnn` took **3.4–14.1 seconds per node** on CPU (compared to 3–20 ms for TextRank-lead) and skipped the opening definition in 2 out of 6 topics. Because a 13–20 node graph would take minutes to summarize with BART, it is kept on demand only.
+3. **BART is too slow for real-time graphs on CPU:** In our 6-topic test logged in [`INCREMENTAL_LOG.md`](INCREMENTAL_LOG.md), `facebook/bart-large-cnn` took **3.4–14.1 seconds per node** on CPU (compared to 3–20 ms for TextRank-lead) and skipped the opening definition in 2 out of 6 topics. Because a 13–20 node graph would take minutes to summarize with BART, it is excluded from the interactive UI.
+
+### 5.4 Interactive Prototype (Streamlit UI)
+
+To make the pipeline usable as an everyday learning tool, we built a 2-page Streamlit application ([`app.py`](../src/dynamic_concept_explorer/app.py), [`app_pages/home.py`](../src/dynamic_concept_explorer/app_pages/home.py), [`app_pages/explorer.py`](../src/dynamic_concept_explorer/app_pages/explorer.py), and [`explorer_helpers.py`](../src/dynamic_concept_explorer/explorer_helpers.py); walkthrough documented in [`UI_FLOW.md`](UI_FLOW.md)):
+
+* **Page 1 — Home:** A minimal landing page that accepts any full Wikipedia article URL and launches the exploration pipeline.
+
+![Home Page — Wikipedia URL Input](images/ui_home.png)
+
+* **Page 2 — Graph-Centralized Explorer:**
+  * **Interactive Concept Space:** An Apache ECharts network positioned in 2D via MDS on pairwise Jensen-Shannon distance between LDA document-topic distributions, colored by dominant LDA topic, and sized by PageRank centrality. Clicking a node or choosing from the dropdown highlights its connections in both directions.
+  * **Node Inspector:** Shows the selected concept's TextRank or LexRank summary (defaulting to `full` scope with a `0–1` length scale bounded by `len(lead) / len(full)`), per-node ROUGE-1/2/L F1 scores, a side-by-side TextRank vs. LexRank comparison, section WordCloud, and Wikipedia lead/full text.
+
+![Explorer Overview — Text mining Seed Concept](images/ui_explorer_overview.png)
+
+![Interactive Node Focus — Natural language processing](images/ui_node_focus.png)
+
+![Node Inspector Details — TextRank vs. LexRank Comparison and Section WordCloud](images/ui_node_details.png)
+
+* **Sidebar Controls & Quantitative Evaluation:** Exposes 2-pass pruning (`top_k`, `min_in_degree`), summarizer settings, and LDA tuning (`num_topics`, `alpha`, `eta`, `no_below`, `no_above`, custom stopwords), with macro/per-topic $C_v$ coherence, graph topology metrics, and corpus ROUGE displayed below the graph. Matching the Section 5 parameters (`top_k=20`, `min_in_degree=2`, `num_topics=4`) reproduces the 13-node, 36-edge graph and $C_v = 0.4619$ coherence interactively.
+
+![Sidebar Parameter Tuning — Top-K=20, Min In-Degree=2, 4 LDA Topics](images/ui_sidebar_tuning.png)
+
+![Quantitative Evaluation Panel — Topic Coherence, Corpus ROUGE, and Graph Topology](images/ui_evaluation.png)
 
 ---
 
@@ -181,9 +205,9 @@ Testing our course methods on an everyday Wikipedia learning task showed that **
 
 ### 6.3 Future Work
 
-1. **Interactive Web UI:** Connect the pipeline (`discover_neighborhood`, `fetch_neighborhood_documents`, `summarize_node`, `cluster_topic_nodes`) to an interactive graph interface where users can click nodes to read summaries, filter by topic, and expand new seed topics.
-2. **Better Text Cleaning:** Keep math `alttext` and remove leftover citation fragments like `(2005)`.
-3. **Flexible Pruning & Topic Count:** Test automatic selection of `num_topics` using $C_v$ coherence and allow high-scoring Pass-1 links to stay even if their in-degree is 1.
+1. **Better Text Cleaning:** Keep math `alttext` and remove leftover citation fragments like `(2005)`.
+2. **Flexible Pruning & Topic Count:** Test automatic selection of `num_topics` using $C_v$ coherence and allow high-scoring Pass-1 links to stay even if their in-degree is 1.
+3. **Multi-Hop Expansion:** Allow expanding any clicked node in the interactive UI as a new seed to grow the concept map on demand.
 
 ---
 
