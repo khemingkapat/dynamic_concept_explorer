@@ -119,12 +119,13 @@ uv run streamlit run src/dynamic_concept_explorer/app.py
 ```
 Or double-click `run_app.bat` on Windows.
 
-The dashboard integrates all pipeline modules across 5 specialized views:
-1. **🌐 Concept Network & Topology**: Interactive Graphviz network with PageRank node sizing, LDA topic color coding, and 2-pass in-degree candidate pruning breakdown.
-2. **📖 Concept Inspector & Sections**: Deep-dive into any concept with instant re-summarization, Wikipedia lead abstracts, full prose reader, and section keywords.
-3. **☁️ Visualizations**: Section WordClouds and NetworkX pairwise word co-occurrence networks from `visualization.py`.
-4. **⚖️ Summarizer Benchmark Lab**: Side-by-side performance comparison of TextRank (Lead/Full), LexRank (Full), and BART with real-time latency and ROUGE-1/2/L scores against human abstracts (`compare_node_summaries.py`).
-5. **📊 Quantitative Evaluation**: Macro and per-topic Gensim $C_v$ topic coherence, graph density/reciprocity/clustering topology metrics, and corpus-wide macro ROUGE scores (`evaluation.py`).
+The Streamlit app uses a 2-page layout:
+1. **Home**: Enter any full Wikipedia article URL (e.g., `https://en.wikipedia.org/wiki/Machine_learning`) to launch an exploration.
+2. **Explorer**:
+   - **Interactive Concept Space**: Apache ECharts network positioned by document-topic similarity (MDS on Jensen-Shannon distance), colored by dominant LDA topic, and sized by PageRank salience. Clicking any node or selecting from the dropdown highlights its neighborhood and updates the inspector.
+   - **Node Inspector**: TextRank / LexRank summary (defaulting to full-article scope with a `0–1` length scale bounded by `len(lead) / len(full)`), per-node ROUGE-1/2/L scores, TextRank vs. LexRank comparison, section WordCloud, and Wikipedia lead/full text.
+   - **Sidebar Tuning**: Controls for 2-pass pruning (`top_k`, `min_in_degree`), summarizer method/scope/scale, and LDA parameters (`num_topics`, `alpha`, `eta`, `no_below`, `no_above`, custom stopwords).
+   - **Quantitative Evaluation**: Macro and per-topic Gensim $C_v$ topic coherence, graph topology metrics, corpus-wide ROUGE scores, and 2-pass pruning breakdown.
 
 ---
 ## 4. Implementation Roadmap
