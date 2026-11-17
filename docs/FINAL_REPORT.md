@@ -52,7 +52,7 @@ Instead of downloading a static dataset, our pipeline builds a fresh dataset on 
 Given a seed URL (for example, `https://en.wikipedia.org/wiki/Text_mining`), the scraper sends an HTTP `GET` request, reads `div#bodyContent` with `BeautifulSoup`, and runs two passes:
 
 1. **Pass 1 — Ranking Outbound Links:**
-   The scraper collects internal `/wiki/...` links and uses **regex pattern matching** to strip URL fragments (`#...`), remove non-article pages (`Special:`, `Help:`, `File:`, `Category:`), and skip boilerplate sections (`See also`, `References`, `External links`, `Notes`, `Further reading`, `Bibliography`, `Sources`). Each link is scored so that links in the opening summary (`in_lead`) and repeated links score higher:
+   The scraper collects internal `/wiki/...` links and uses **regex pattern matching** to strip URL fragments (`#...`), remove non-article pages (`Special:`, `Help:`, `File:`, `Category:`), and skip boilerplate sections (`See also`, `References`, `External links`, `Notes`, `Further reading`, `Bibliography`, `Sources`). To prioritize foundational concepts without relying on an external model, we designed a **custom project heuristic** (`default_link_scorer`) that combines lead-section prominence with sublinear log-frequency scaling:
 
 $$
 \mathrm{score}(v) = 2 \cdot I_{\mathrm{lead}}(v) + \ln(1 + \mathrm{count}(v))
@@ -209,6 +209,14 @@ Testing our course methods on an everyday Wikipedia learning task showed that **
 2. **Flexible Pruning & Topic Count:** Test automatic selection of `num_topics` using $C_v$ coherence and allow high-scoring Pass-1 links to stay even if their in-degree is 1.
 3. **Multi-Hop Expansion:** Allow expanding any clicked node in the interactive UI as a new seed to grow the concept map on demand.
 
+### 6.4 Reflection: Where Does Classical Text Analytics Fit in a World of Generative AI?
+
+It is fair to ask why anyone would build a pipeline out of TF-IDF, TextRank, PageRank, and LDA when frontier Large Language Models (LLMs) can read an article and write a fluent summary in seconds. On raw fluency, synthesis, and open-ended reasoning, deterministic text analytics will hardly beat a strong frontier model.
+
+Where classical methods still hold a clear advantage is **compute cost, latency, and energy efficiency**. Everything in this project—scraping, 2-pass pruning, TextRank summarization (~5–15 ms per article), and LDA clustering—runs **deterministically on a standard laptop CPU** without GPUs or cloud APIs. Even a relatively small neural model we tested (`facebook/bart-large-cnn`) took 3.4–14.1 seconds per node on CPU. At larger scale, empirical measurements by Luccioni, Jernite, and Strubell (2024) show that generative text generation and summarization consume **over 10× more energy** than basic discriminative tasks (~0.047–0.049 kWh per 1,000 inferences on open models, and substantially more for massive frontier models).
+
+That leaves an open question worth thinking about as generative AI becomes the default: **when do we truly need the power and energy cost of a frontier model, and when is a transparent, deterministic tool that runs locally on a laptop already enough for everyday learning?**
+
 ---
 
 ## 7. References
@@ -221,3 +229,4 @@ Testing our course methods on an everyday Wikipedia learning task showed that **
 6. Lin, C.-Y. (2004). *ROUGE: A Package for Automatic Evaluation of Summaries*. ACL Workshop on Text Summarization Branches Out, 74–81.
 7. Hagberg, A. A., Schult, D. A., & Swart, P. J. (2008). *Exploring Network Structure, Dynamics, and Function using NetworkX*. SciPy 2008, 11–15.
 8. Řehůřek, R., & Sojka, P. (2010). *Software Framework for Topic Modelling with Large Corpora*. LREC 2010 Workshop on New Challenges for NLP Frameworks, 45–50.
+9. Luccioni, A. S., Jernite, Y., & Strubell, E. (2024). *Power Hungry Processing: Watts Driving the Cost of AI Deployment?* ACM FAccT 2024 (arXiv:2311.16863).
